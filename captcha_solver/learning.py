@@ -19,6 +19,8 @@ class CaptchaLearningStore:
         "min_point_score": 0.20,
         "min_score_gap": 0.005,
     }
+    MIN_FAILURE_SAMPLES_FOR_TIGHTENING = 5
+    SUCCESS_MARGIN = 0.04
 
     def __init__(self, sample_dir: Path):
         self.sample_dir = sample_dir
@@ -30,6 +32,16 @@ class CaptchaLearningStore:
 
     def _thresholds_from_state(self, state: dict) -> dict:
         thresholds = dict(self.DEFAULT_THRESHOLDS)
+        success_scores = [
+            item.get("average_score")
+            for item in state.get("successes", [])
+            if isinstance(item.get("average_score"), (int, float))
+        ]
+        success_point_scores = [
+            item.get("min_point_score")
+            for item in state.get("successes", [])
+            if isinstance(item.get("min_point_score"), (int, float))
+        ]
         failure_scores = [
             item.get("average_score")
             for item in state.get("failed_clicks", [])
@@ -40,10 +52,18 @@ class CaptchaLearningStore:
             for item in state.get("failed_clicks", [])
             if isinstance(item.get("min_point_score"), (int, float))
         ]
-        if failure_scores:
+
+        if len(failure_scores) >= self.MIN_FAILURE_SAMPLES_FOR_TIGHTENING:
             thresholds["min_average_score"] = min(max(thresholds["min_average_score"], max(failure_scores) + 0.02), 0.72)
-        if failure_point_scores:
+        if len(failure_point_scores) >= self.MIN_FAILURE_SAMPLES_FOR_TIGHTENING:
             thresholds["min_point_score"] = min(max(thresholds["min_point_score"], max(failure_point_scores) + 0.02), 0.55)
+
+        if success_scores:
+            success_cap = max(self.DEFAULT_THRESHOLDS["min_average_score"], min(success_scores) - self.SUCCESS_MARGIN)
+            thresholds["min_average_score"] = min(thresholds["min_average_score"], success_cap)
+        if success_point_scores:
+            point_cap = max(self.DEFAULT_THRESHOLDS["min_point_score"], min(success_point_scores) - self.SUCCESS_MARGIN)
+            thresholds["min_point_score"] = min(thresholds["min_point_score"], point_cap)
         return thresholds
 
     def record(self, outcome: str, answer_image, bg_image, diagnostics: dict, suffix: str) -> None:
