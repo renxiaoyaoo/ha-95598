@@ -5,8 +5,12 @@ from functools import lru_cache
 from io import BytesIO
 
 import numpy as np
-import cv2
-from PIL import Image
+from PIL import Image, ImageFilter
+
+try:
+    import cv2
+except Exception:  # pragma: no cover - depends on optional runtime package
+    cv2 = None
 
 """Reusable image-based captcha solvers.
 
@@ -46,7 +50,7 @@ def capture_element_image(driver, element, scroll_to_center: bool = True) -> byt
 class PointClickImageSolver:
     """Solve point-click captchas from answer and candidate images."""
 
-    ROTATION_ANGLES = (-180, -90, -45, -30, -20, -10, 0, 10, 20, 30, 45, 90, 180)
+    ROTATION_ANGLES = (-180, -135, -90, -60, -45, -35, -25, -15, -8, 0, 8, 15, 25, 35, 45, 60, 90, 135, 180)
     COMPLEX_ICON_SIZE_THRESHOLD = 22
 
     def __init__(self):
@@ -88,13 +92,69 @@ class PointClickImageSolver:
 
     @staticmethod
     def dark_mask(image: Image.Image, threshold: int) -> np.ndarray:
-        return np.array(image.convert("L")) < threshold
+        rgb = np.array(image.convert("RGB"))
+        gray = np.array(image.convert("L"))
+        channel_max = rgb.max(axis=2)
+        channel_min = rgb.min(axis=2)
+        chroma = channel_max - channel_min
+        return (gray < threshold) & (channel_max < min(160, threshold + 45)) & (chroma < 58)
 
     @staticmethod
-    def connected_boxes(mask: np.ndarray, min_area: int = 100):
+    def dilate_mask(mask: np.ndarray, radius: int = 1, iterations: int = 1) -> np.ndarray:
+        if mask.size == 0 or radius <= 0 or iterations <= 0:
+            return mask
+        result = mask.astype(bool)
+        for _ in range(iterations):
+            padded = np.pad(result, radius, mode="constant", constant_values=False)
+            grown = np.zeros_like(result, dtype=bool)
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    grown |= padded[
+                        radius + dy : radius + dy + result.shape[0],
+                        radius + dx : radius + dx + result.shape[1],
+                    ]
+            result = grown
+        return result
+
+    @staticmethod
+    def erode_mask(mask: np.ndarray, radius: int = 1, iterations: int = 1) -> np.ndarray:
+        if mask.size == 0 or radius <= 0 or iterations <= 0:
+            return mask
+        result = mask.astype(bool)
+        for _ in range(iterations):
+            padded = np.pad(result, radius, mode="constant", constant_values=False)
+            shrunk = np.ones_like(result, dtype=bool)
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    shrunk &= padded[
+                        radius + dy : radius + dy + result.shape[0],
+                        radius + dx : radius + dx + result.shape[1],
+                    ]
+            result = shrunk
+        return result
+
+    @classmethod
+    def close_mask(cls, mask: np.ndarray, radius: int = 1, iterations: int = 1) -> np.ndarray:
+        return cls.erode_mask(cls.dilate_mask(mask, radius=radius, iterations=iterations), radius=radius, iterations=iterations)
+
+    @staticmethod
+    def connected_boxes(mask: np.ndarray, min_area: int = 100, connectivity: int = 8):
         height, width = mask.shape
         seen = np.zeros_like(mask, dtype=bool)
         boxes = []
+        if connectivity == 8:
+            neighbors = (
+                (1, 0),
+                (-1, 0),
+                (0, 1),
+                (0, -1),
+                (1, 1),
+                (1, -1),
+                (-1, 1),
+                (-1, -1),
+            )
+        else:
+            neighbors = ((1, 0), (-1, 0), (0, 1), (0, -1))
         for y in range(height):
             for x in range(width):
                 if seen[y, x] or not mask[y, x]:
@@ -107,7 +167,8 @@ class PointClickImageSolver:
                     cx, cy = stack.pop()
                     xs.append(cx)
                     ys.append(cy)
-                    for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                    for dx, dy in neighbors:
+                        nx, ny = cx + dx, cy + dy
                         if 0 <= nx < width and 0 <= ny < height and mask[ny, nx] and not seen[ny, nx]:
                             seen[ny, nx] = True
                             stack.append((nx, ny))
@@ -117,7 +178,7 @@ class PointClickImageSolver:
         return boxes
 
     def segment_answer_icons(self, answer_image: Image.Image):
-        mask = self.dark_mask(answer_image, 130)
+        mask = self.close_mask(self.dark_mask(answer_image, 135), radius=1)
         xs = np.where(mask.any(axis=0))[0]
         if len(xs) == 0:
             return []
@@ -266,14 +327,14 @@ class PointClickImageSolver:
                     candidate = self.expand_box(candidate_box_item, 3, bg_image.width, bg_image.height)
                     candidate_image = bg_image.crop(candidate[:4])
                     candidate_mask = self.dark_mask(candidate_image, 100)
-                    score = self.combined_match_score(
+                    score = float(self.combined_match_score(
                         target_image,
                         candidate_image,
                         target_mask,
                         candidate_mask,
                         answer_box,
                         candidate_box_item,
-                    )
+                    ))
                 scores.append((score, candidate_box_item))
             if not scores:
                 return []
@@ -407,53 +468,78 @@ class PointClickImageSolver:
 
     def find_click_candidates(self, bg_image: Image.Image):
         raw_boxes = []
-        for threshold in (60, 80, 100):
-            for box in self.connected_boxes(self.dark_mask(bg_image, threshold), min_area=100):
-                left, top, right, bottom, area = box
+        for threshold in (75, 95, 115, 135):
+            mask = self.dark_mask(bg_image, threshold)
+            merged_mask = self.close_mask(mask, radius=1)
+            merged_mask = self.dilate_mask(merged_mask, radius=1)
+            for box in self.connected_boxes(merged_mask, min_area=45, connectivity=8):
+                left, top, right, bottom, _area = box
                 width = right - left
                 height = bottom - top
-                in_watermark_zone = left > bg_image.width - 90 and top > bg_image.height - 45
-                if 15 <= width <= 120 and 15 <= height <= 120 and area > 100 and not in_watermark_zone:
-                    raw_boxes.append(box)
+                if not (12 <= width <= 130 and 12 <= height <= 130):
+                    continue
+                if width * height > 9000:
+                    continue
+                original_area = int(mask[top:bottom, left:right].sum())
+                fill_ratio = original_area / max(width * height, 1)
+                # Tencent point-click glyphs are black line drawings. This keeps
+                # dense photo patches out while allowing thin digits and icons.
+                if 45 <= original_area and 0.015 <= fill_ratio <= 0.65:
+                    raw_boxes.append((left, top, right, bottom, original_area))
 
-        gray = np.array(bg_image.convert("L"))
-        edge_mask = cv2.Canny(cv2.GaussianBlur(gray, (3, 3), 0), 40, 120) > 0
-        for box in self.connected_boxes(edge_mask, min_area=30):
-            left, top, right, bottom, area = box
-            width = right - left
-            height = bottom - top
-            in_watermark_zone = left > bg_image.width - 90 and top > bg_image.height - 45
-            if 12 <= width <= 120 and 12 <= height <= 120 and area > 30 and not in_watermark_zone:
-                raw_boxes.append(box)
+        unique_boxes = self.deduplicate_boxes(raw_boxes, tolerance=4)
+        merged_boxes = self.merge_nearby_candidate_boxes(unique_boxes, bg_image.width, bg_image.height)
+        # Keep both raw glyph boxes and conservative unions. Raw boxes are better
+        # for glyphs near wheat/texture; unions rescue icons split into strokes.
+        return self.deduplicate_boxes(unique_boxes + merged_boxes, tolerance=6)
 
-        unique_boxes = []
-        for box in raw_boxes:
-            if not any(
-                abs(box[0] - existing[0]) < 3
-                and abs(box[1] - existing[1]) < 3
-                and abs(box[2] - existing[2]) < 3
-                and abs(box[3] - existing[3]) < 3
-                for existing in unique_boxes
-            ):
-                unique_boxes.append(box)
+    @staticmethod
+    def boxes_overlap_or_close(first, second, gap: int = 8) -> bool:
+        return not (
+            first[2] + gap < second[0]
+            or second[2] + gap < first[0]
+            or first[3] + gap < second[1]
+            or second[3] + gap < first[1]
+        )
 
-        candidates = list(unique_boxes)
-        if len(unique_boxes) < 3:
-            for i, first in enumerate(unique_boxes):
-                for second in unique_boxes[i + 1:]:
-                    union = self.union_box((first, second))
+    def merge_nearby_candidate_boxes(self, boxes, image_width: int, image_height: int):
+        merged = list(boxes)
+        changed = True
+        while changed:
+            changed = False
+            next_boxes = []
+            used = [False] * len(merged)
+            for index, box in enumerate(merged):
+                if used[index]:
+                    continue
+                current = box
+                used[index] = True
+                for other_index in range(index + 1, len(merged)):
+                    if used[other_index]:
+                        continue
+                    other = merged[other_index]
+                    if not self.boxes_overlap_or_close(current, other, gap=10):
+                        continue
+                    union = self.union_box((current, other))
                     width = union[2] - union[0]
                     height = union[3] - union[1]
-                    if 25 <= width <= 120 and 25 <= height <= 120 and union[4] >= 300:
-                        candidates.append(union)
+                    if 12 <= width <= 135 and 12 <= height <= 135 and width * height <= 10000:
+                        current = union
+                        used[other_index] = True
+                        changed = True
+                next_boxes.append(self.expand_box(current, 1, image_width, image_height))
+            merged = next_boxes
+        return merged
 
+    @staticmethod
+    def deduplicate_boxes(boxes, tolerance: int = 5):
         final = []
-        for box in candidates:
+        for box in sorted(boxes, key=lambda item: (item[1], item[0], -(item[2] - item[0]) * (item[3] - item[1]))):
             if not any(
-                abs(box[0] - existing[0]) < 5
-                and abs(box[1] - existing[1]) < 5
-                and abs(box[2] - existing[2]) < 5
-                and abs(box[3] - existing[3]) < 5
+                abs(box[0] - existing[0]) <= tolerance
+                and abs(box[1] - existing[1]) <= tolerance
+                and abs(box[2] - existing[2]) <= tolerance
+                and abs(box[3] - existing[3]) <= tolerance
                 for existing in final
             ):
                 final.append(box)
@@ -497,8 +583,15 @@ class PointClickImageSolver:
         array = np.array(trimmed)
         if array.size == 0:
             return np.zeros((size, size), dtype=bool)
-        blurred = cv2.GaussianBlur(array, (3, 3), 0)
-        edges = cv2.Canny(blurred, 35, 120) > 0
+        if cv2 is not None:
+            blurred = cv2.GaussianBlur(array, (3, 3), 0)
+            edges = cv2.Canny(blurred, 35, 120) > 0
+        else:
+            vertical = np.zeros_like(array, dtype=bool)
+            horizontal = np.zeros_like(array, dtype=bool)
+            vertical[:, 1:] = np.abs(array[:, 1:].astype(np.int16) - array[:, :-1].astype(np.int16)) > 24
+            horizontal[1:, :] = np.abs(array[1:, :].astype(np.int16) - array[:-1, :].astype(np.int16)) > 24
+            edges = vertical | horizontal
         return PointClickImageSolver.normalize_mask(edges, size=size)
 
     def score_icon_match(self, target_mask: np.ndarray, candidate_mask: np.ndarray) -> float:
@@ -519,6 +612,8 @@ class PointClickImageSolver:
 
     @staticmethod
     def _largest_contour(mask: np.ndarray):
+        if cv2 is None:
+            return None
         image = (mask.astype("uint8") * 255)
         contours, _hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
@@ -526,6 +621,8 @@ class PointClickImageSolver:
         return max(contours, key=cv2.contourArea)
 
     def score_shape_match(self, target_mask: np.ndarray, candidate_mask: np.ndarray) -> float:
+        if cv2 is None:
+            return self.score_soft_mask_match(target_mask, candidate_mask)
         if target_mask.size == 0 or candidate_mask.size == 0 or not target_mask.any() or not candidate_mask.any():
             return 0.0
         target = self.normalize_mask(target_mask, size=128)
@@ -548,6 +645,41 @@ class PointClickImageSolver:
         if best_distance is None:
             return 0.0
         return 1.0 / (1.0 + (best_distance * 1000.0))
+
+    @staticmethod
+    def soft_mask(mask: np.ndarray, size: int = 96) -> np.ndarray:
+        normalized = PointClickImageSolver.normalize_mask(mask, size=size)
+        image = Image.fromarray((normalized.astype("uint8") * 255), mode="L")
+        blurred = image.filter(ImageFilter.GaussianBlur(radius=2.0))
+        array = np.array(blurred, dtype=np.float32) / 255.0
+        max_value = float(array.max())
+        if max_value > 0:
+            array /= max_value
+        return array
+
+    def score_soft_mask_match(self, target_mask: np.ndarray, candidate_mask: np.ndarray) -> float:
+        if target_mask.size == 0 or candidate_mask.size == 0 or not target_mask.any() or not candidate_mask.any():
+            return 0.0
+        target = self.soft_mask(target_mask, size=112)
+        candidate = self.soft_mask(candidate_mask, size=112)
+        candidate_image = Image.fromarray(np.uint8(candidate * 255), mode="L")
+        target_norm = float(np.linalg.norm(target))
+        if target_norm <= 0:
+            return 0.0
+        best = 0.0
+        for angle in self.ROTATION_ANGLES:
+            rotated = candidate_image.rotate(angle, expand=False, resample=Image.Resampling.BILINEAR, fillcolor=0)
+            rotated_arr = np.array(rotated, dtype=np.float32) / 255.0
+            denom = target_norm * float(np.linalg.norm(rotated_arr))
+            if denom <= 0:
+                continue
+            correlation = float(np.sum(target * rotated_arr) / denom)
+            overlap = float(np.sum(np.minimum(target, rotated_arr)))
+            recall = overlap / max(float(np.sum(target)), 1.0)
+            precision = overlap / max(float(np.sum(rotated_arr)), 1.0)
+            coverage = (2.0 * precision * recall) / max(precision + recall, 1e-6)
+            best = max(best, (correlation * 0.62) + (coverage * 0.38))
+        return best
 
     def score_visual_match(self, target_image: Image.Image, candidate_image: Image.Image) -> float:
         target = self.normalize_grayscale(target_image, size=112)
@@ -594,6 +726,7 @@ class PointClickImageSolver:
         candidate_box: tuple,
     ) -> float:
         icon_score = self.score_icon_match(target_mask, candidate_mask)
+        soft_score = self.score_soft_mask_match(target_mask, candidate_mask)
         shape_score = self.score_shape_match(target_mask, candidate_mask)
         visual_score = self.score_visual_match(target_image, candidate_image)
         edge_score = self.score_edge_match(target_image, candidate_image)
@@ -606,17 +739,19 @@ class PointClickImageSolver:
         size_score = (width_ratio + height_ratio) / 2.0
         if min(target_width, target_height) >= self.COMPLEX_ICON_SIZE_THRESHOLD:
             return (
-                (visual_score * 0.22)
-                + (icon_score * 0.16)
-                + (shape_score * 0.22)
-                + (edge_score * 0.30)
+                (soft_score * 0.34)
+                + (visual_score * 0.12)
+                + (icon_score * 0.12)
+                + (shape_score * 0.16)
+                + (edge_score * 0.16)
                 + (size_score * 0.10)
             )
         return (
-            (visual_score * 0.15)
-            + (icon_score * 0.60)
-            + (shape_score * 0.05)
-            + (edge_score * 0.15)
+            (soft_score * 0.42)
+            + (visual_score * 0.10)
+            + (icon_score * 0.30)
+            + (shape_score * 0.04)
+            + (edge_score * 0.09)
             + (size_score * 0.05)
         )
 
@@ -675,14 +810,14 @@ class PointClickImageSolver:
                 candidate_mask = self.dark_mask(candidate_image, 100)
                 scores.append(
                     (
-                        self.combined_match_score(
+                        float(self.combined_match_score(
                             target_image,
                             candidate_image,
                             target_mask,
                             candidate_mask,
                             target_box,
                             candidate_box,
-                        ),
+                        )),
                         candidate_box,
                     )
                 )
