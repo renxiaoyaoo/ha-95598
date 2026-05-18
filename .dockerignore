@@ -2,6 +2,7 @@
 .codex
 .env
 .env.*
+config/tou_price_config.local.json
 .venv
 .pytest_cache
 .mypy_cache
