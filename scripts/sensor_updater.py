@@ -225,6 +225,7 @@ class SensorUpdater:
         flat_usage: float = None,
         peak_usage: float = None,
         tip_usage: float = None,
+        notify_stale: bool = True,
     ):
         self._save_to_cache(
             user_id,
@@ -241,6 +242,8 @@ class SensorUpdater:
             peak_usage,
             tip_usage,
         )
+        if notify_stale:
+            self._check_and_notify_stale_data(user_id, self.cache_store.load().get(user_id, {}))
         postfix = f"_{user_id[-4:]}"
         if balance is not None:
             self.update_balance(user_id, postfix, balance)
@@ -360,11 +363,10 @@ class SensorUpdater:
                     logging.warning("Skip invalid cache entry for user %s: %r", user_id, values)
                     continue
                 user_data = values.get("data", {})
-                self._check_and_notify_stale_data(user_id, values)
                 clean_values = {k: v for k, v in user_data.items() if k != 'timestamp'}
                 if not clean_values:
                     continue
-                self.update_one_userid(user_id, **clean_values)
+                self.update_one_userid(user_id, notify_stale=False, **clean_values)
             return True
         except Exception as e:
             logging.error(f"Failed to republish data: {e}")
