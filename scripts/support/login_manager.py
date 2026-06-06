@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -20,6 +21,8 @@ from scripts.support.session_manager import SessionManager
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / "data"
+LOGIN_STATE_FILE = DATA_DIR / "login_state.json"
+PASSWORD_ERROR_COOLDOWN_HOURS = int(os.getenv("PASSWORD_LOGIN_ERROR_COOLDOWN_HOURS", "24"))
 
 
 class LoginManager:
@@ -53,6 +56,7 @@ class LoginManager:
         self._click_button = click_button
         self.notifier = build_notifier()
         self.login_method = "unknown"
+        self._password_login_blocked_this_run = False
         self.tencent_captcha = TencentCaptchaHandler(
             trace_dir=self._trace_dir,
             log_page_state=self._log_page_state,
@@ -131,7 +135,13 @@ class LoginManager:
         return "unknown"
 
     def _login_with_credential_rotation(self, driver, phone_code: bool = False) -> bool:
+        if self._is_password_login_in_cooldown():
+            logging.info("Password login is in cooldown because recent attempts hit RK001. Switch to configured fallback.")
+            self._open_login_page(driver)
+            return self._fallback_login(driver)
+
         total_credentials = len(self._credentials)
+        self._password_login_blocked_this_run = False
         for attempt in range(total_credentials):
             credential = self._activate_credential(
                 self._credential_index if attempt == 0 else self._credential_index + 1
@@ -143,14 +153,17 @@ class LoginManager:
                 credential.label,
             )
             if self.login(driver, phone_code=phone_code, allow_fallback=False):
+                self._clear_password_login_cooldown()
                 return True
             logging.info("Login credential %s did not complete password login.", credential.label)
+            if self._password_login_blocked_this_run:
+                logging.info("Stop trying remaining credentials because password login hit RK001.")
+                return self._fallback_login(driver)
 
         logging.info("All configured login credentials failed password login. Switch to configured fallback.")
         return self._fallback_login(driver)
 
-    @ErrorWatcher.watch
-    def login(self, driver, phone_code=False, allow_fallback: bool = True) -> bool:
+    def _open_login_page(self, driver) -> None:
         try:
             driver.get(LOGIN_URL)
             self._log_page_state(driver, "after_open_login_url")
@@ -161,6 +174,10 @@ class LoginManager:
             logging.debug("Login failed, open URL: %s failed.", LOGIN_URL)
         logging.info("Open LOGIN_URL:%s.\r", LOGIN_URL)
         self._step_sleep(driver, "login_page_load")
+
+    @ErrorWatcher.watch
+    def login(self, driver, phone_code=False, allow_fallback: bool = True) -> bool:
+        self._open_login_page(driver)
 
         driver.implicitly_wait(0)
         try:
@@ -229,6 +246,8 @@ class LoginManager:
                     "Password login returned a page error without a usable session: %s. Switch to QR-code login fallback.",
                     error_message or "<empty>",
                 )
+                if self._is_rk001_error(error_message):
+                    self._record_password_login_cooldown(error_message)
                 self._log_page_state(driver, "after_submit_password_login_error")
                 self._save_tencent_presence(driver)
                 if self.tencent_captcha.has_captcha(driver):
@@ -263,6 +282,69 @@ class LoginManager:
         finally:
             driver.implicitly_wait(self.driver_wait_time)
 
+    @staticmethod
+    def _is_rk001_error(error_message: Optional[str]) -> bool:
+        return bool(error_message and "RK001" in error_message)
+
+    def _load_login_state(self) -> dict:
+        try:
+            if LOGIN_STATE_FILE.exists():
+                return json.loads(LOGIN_STATE_FILE.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logging.warning("Failed to load login state file %s: %s", LOGIN_STATE_FILE, exc)
+        return {}
+
+    def _save_login_state(self, state: dict) -> None:
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            LOGIN_STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            logging.warning("Failed to save login state file %s: %s", LOGIN_STATE_FILE, exc)
+
+    def _record_password_login_cooldown(self, error_message: Optional[str]) -> None:
+        now = datetime.now(timezone.utc)
+        state = self._load_login_state()
+        state["password_login_error"] = {
+            "reason": "RK001",
+            "message": error_message or "",
+            "blocked_until": (now + timedelta(hours=PASSWORD_ERROR_COOLDOWN_HOURS)).isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        self._password_login_blocked_this_run = True
+        self._save_login_state(state)
+        logging.info("Password login cooldown recorded for %s hour(s) after RK001.", PASSWORD_ERROR_COOLDOWN_HOURS)
+
+    def _clear_password_login_cooldown(self) -> None:
+        state = self._load_login_state()
+        if "password_login_error" not in state:
+            return
+        state.pop("password_login_error", None)
+        self._save_login_state(state)
+        self._password_login_blocked_this_run = False
+        logging.info("Password login cooldown cleared after successful password login.")
+
+    def _is_password_login_in_cooldown(self) -> bool:
+        state = self._load_login_state()
+        password_error = state.get("password_login_error") if isinstance(state, dict) else None
+        if not isinstance(password_error, dict):
+            return False
+        if password_error.get("reason") != "RK001":
+            return False
+        blocked_until = password_error.get("blocked_until")
+        if not blocked_until:
+            return False
+        try:
+            until = datetime.fromisoformat(blocked_until)
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
+        except Exception:
+            return False
+        if datetime.now(timezone.utc) < until:
+            return True
+        state.pop("password_login_error", None)
+        self._save_login_state(state)
+        return False
+
     def _fallback_login(self, driver) -> bool:
         fallback = os.getenv("LOGIN_FALLBACK")
         if fallback == "qrcode":
@@ -272,28 +354,18 @@ class LoginManager:
 
     def _qr_login(self, driver) -> bool:
         logging.info("qrcode login start")
-        element = WebDriverWait(driver, self.driver_wait_time).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "qr_code"))
-        )
-        driver.execute_script("arguments[0].click();", element)
-        logging.info("switch to qrcode mode")
-
-        self._step_sleep(driver, "after_switch_to_qrcode_mode")
+        if not self._open_qr_login_tab(driver):
+            return False
 
         qr_code_path = DATA_DIR / "login_qr_code.png"
+        previous_qr_src: Optional[str] = None
         for refresh_index in range(self.qr_refresh_limit + 1):
-            qr_element = WebDriverWait(driver, self.driver_wait_time).until(
-                EC.visibility_of_element_located((By.XPATH, "//div[@class='sweepCodePic']//img"))
-            )
-            logging.info("find imgLogin element")
-
-            img_src = qr_element.get_attribute("src")
-            if img_src.startswith("data:image"):
-                base64_data = img_src.split(",")[1]
-                img_screenshot = base64.b64decode(base64_data)
-            else:
-                logging.info("qrcode img src not base64")
-                img_screenshot = qr_element.screenshot_as_png
+            try:
+                qr_element, img_screenshot, current_qr_src = self._wait_for_fresh_qr_code(driver, previous_qr_src)
+            except Exception as exc:
+                logging.warning("Failed to wait for a fresh QR code image: %s", exc)
+                return False
+            previous_qr_src = current_qr_src
 
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             with open(qr_code_path, "wb") as file:
@@ -331,11 +403,9 @@ class LoginManager:
                         refresh_index + 1,
                         self.qr_refresh_limit,
                     )
-                    try:
-                        driver.execute_script("arguments[0].click();", qr_element)
-                        time.sleep(1)
-                    except Exception as exc:
-                        logging.warning("Failed to click expired QR code for refresh: %s", exc)
+                    if not self._reload_qr_login_page(driver):
+                        return False
+                    previous_qr_src = None
                     should_refresh = True
                     break
 
@@ -358,11 +428,9 @@ class LoginManager:
                     refresh_index + 1,
                     self.qr_refresh_limit,
                 )
-                try:
-                    driver.execute_script("arguments[0].click();", qr_element)
-                    time.sleep(1)
-                except Exception as exc:
-                    logging.warning("Failed to refresh QR code after timeout: %s", exc)
+                if not self._reload_qr_login_page(driver):
+                    return False
+                previous_qr_src = None
                 continue
 
             logging.warning("qrcode Login timeout")
@@ -378,3 +446,47 @@ class LoginManager:
             self.tencent_captcha.capture_state(driver, "qrcode_login_timeout_tencent_captcha")
 
         return False
+
+    def _wait_for_fresh_qr_code(self, driver, previous_qr_src: Optional[str]) -> tuple[object, bytes, str]:
+        def read_qr_code(d):
+            element = d.find_element(By.XPATH, "//div[@class='sweepCodePic']//img")
+            if not element.is_displayed():
+                return False
+            img_src = element.get_attribute("src") or ""
+            if not img_src or img_src == previous_qr_src:
+                return False
+            error = self._get_error_message(d, "//div[@class='sweepCodePic']//div[@class='erwBg']//p")
+            if error and "二维码失效" in error:
+                return False
+            if img_src.startswith("data:image"):
+                image_bytes = base64.b64decode(img_src.split(",", 1)[1])
+            else:
+                logging.info("qrcode img src not base64")
+                image_bytes = element.screenshot_as_png
+            return element, image_bytes, img_src
+
+        result = WebDriverWait(driver, self.driver_wait_time).until(read_qr_code)
+        logging.info("find fresh qrcode image")
+        return result
+
+    def _open_qr_login_tab(self, driver) -> bool:
+        try:
+            element = WebDriverWait(driver, self.driver_wait_time).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "qr_code"))
+            )
+            driver.execute_script("arguments[0].click();", element)
+            logging.info("switch to qrcode mode")
+            self._step_sleep(driver, "after_switch_to_qrcode_mode")
+            return True
+        except Exception as exc:
+            logging.warning("Failed to switch to QR-code login mode: %s", exc)
+            return False
+
+    def _reload_qr_login_page(self, driver) -> bool:
+        try:
+            logging.info("Reload login page to request a new QR code.")
+            self._open_login_page(driver)
+            return self._open_qr_login_tab(driver)
+        except Exception as exc:
+            logging.warning("Failed to reload QR-code login page: %s", exc)
+            return False
