@@ -22,7 +22,7 @@ from scripts.support.session_manager import SessionManager
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / "data"
 LOGIN_STATE_FILE = DATA_DIR / "login_state.json"
-PASSWORD_ERROR_COOLDOWN_HOURS = int(os.getenv("PASSWORD_LOGIN_ERROR_COOLDOWN_HOURS", "24"))
+PASSWORD_ERROR_COOLDOWN_HOURS = int(os.getenv("PASSWORD_LOGIN_ERROR_COOLDOWN_HOURS", "1"))
 
 
 class LoginManager:
@@ -136,9 +136,8 @@ class LoginManager:
 
     def _login_with_credential_rotation(self, driver, phone_code: bool = False) -> bool:
         if self._is_password_login_in_cooldown():
-            logging.info("Password login is in cooldown because recent attempts hit RK001. Switch to configured fallback.")
-            self._open_login_page(driver)
-            return self._fallback_login(driver)
+            logging.info("Password login is in cooldown because recent attempts hit RK001. Skip this unattended run instead of switching to QR-code login.")
+            return False
 
         total_credentials = len(self._credentials)
         self._password_login_blocked_this_run = False
@@ -157,8 +156,8 @@ class LoginManager:
                 return True
             logging.info("Login credential %s did not complete password login.", credential.label)
             if self._password_login_blocked_this_run:
-                logging.info("Stop trying remaining credentials because password login hit RK001.")
-                return self._fallback_login(driver)
+                logging.info("Stop trying remaining credentials because password login hit RK001. Skip QR-code fallback for unattended operation.")
+                return False
 
         logging.info("All configured login credentials failed password login. Switch to configured fallback.")
         return self._fallback_login(driver)
@@ -302,6 +301,10 @@ class LoginManager:
             logging.warning("Failed to save login state file %s: %s", LOGIN_STATE_FILE, exc)
 
     def _record_password_login_cooldown(self, error_message: Optional[str]) -> None:
+        self._password_login_blocked_this_run = True
+        if PASSWORD_ERROR_COOLDOWN_HOURS <= 0:
+            logging.info("Password login RK001 detected; persistent cooldown is disabled.")
+            return
         now = datetime.now(timezone.utc)
         state = self._load_login_state()
         state["password_login_error"] = {
@@ -310,7 +313,6 @@ class LoginManager:
             "blocked_until": (now + timedelta(hours=PASSWORD_ERROR_COOLDOWN_HOURS)).isoformat(),
             "updated_at": now.isoformat(),
         }
-        self._password_login_blocked_this_run = True
         self._save_login_state(state)
         logging.info("Password login cooldown recorded for %s hour(s) after RK001.", PASSWORD_ERROR_COOLDOWN_HOURS)
 
@@ -324,19 +326,28 @@ class LoginManager:
         logging.info("Password login cooldown cleared after successful password login.")
 
     def _is_password_login_in_cooldown(self) -> bool:
+        if PASSWORD_ERROR_COOLDOWN_HOURS <= 0:
+            return False
         state = self._load_login_state()
         password_error = state.get("password_login_error") if isinstance(state, dict) else None
         if not isinstance(password_error, dict):
             return False
         if password_error.get("reason") != "RK001":
             return False
-        blocked_until = password_error.get("blocked_until")
-        if not blocked_until:
-            return False
         try:
-            until = datetime.fromisoformat(blocked_until)
-            if until.tzinfo is None:
-                until = until.replace(tzinfo=timezone.utc)
+            updated_at = password_error.get("updated_at")
+            if updated_at:
+                updated = datetime.fromisoformat(updated_at)
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                until = updated + timedelta(hours=PASSWORD_ERROR_COOLDOWN_HOURS)
+            else:
+                blocked_until = password_error.get("blocked_until")
+                if not blocked_until:
+                    return False
+                until = datetime.fromisoformat(blocked_until)
+                if until.tzinfo is None:
+                    until = until.replace(tzinfo=timezone.utc)
         except Exception:
             return False
         if datetime.now(timezone.utc) < until:
