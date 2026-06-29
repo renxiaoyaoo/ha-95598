@@ -8,11 +8,28 @@ from PIL import Image
 from captcha_solver.image import PointClickImageSolver
 
 
-def replay_pair(answer_path: Path, bg_path: Path, output_dir: Path | None = None) -> dict:
+def replay_pair(
+    answer_path: Path,
+    bg_path: Path,
+    output_dir: Path | None = None,
+    *,
+    min_average_score: float | None = None,
+    min_point_score: float | None = None,
+    min_score_gap: float | None = None,
+) -> dict:
     solver = PointClickImageSolver()
     answer_image = Image.open(answer_path).convert("RGB")
     bg_image = Image.open(bg_path).convert("RGB")
-    solutions = solver.ranked_solutions_from_images(answer_image, bg_image, limit=3)
+    kwargs = {
+        key: value
+        for key, value in {
+            "min_average_score": min_average_score,
+            "min_point_score": min_point_score,
+            "min_score_gap": min_score_gap,
+        }.items()
+        if value is not None
+    }
+    solutions = solver.ranked_solutions_from_images(answer_image, bg_image, limit=3, **kwargs)
     report = solver.get_last_diagnostics()
     report["answer_path"] = str(answer_path)
     report["background_path"] = str(bg_path)
@@ -26,7 +43,7 @@ def replay_pair(answer_path: Path, bg_path: Path, output_dir: Path | None = None
     return report
 
 
-def discover_pairs(trace_dir: Path) -> list[tuple[Path, Path]]:
+def discover_pairs(trace_dir: Path, newest_first: bool = False, limit: int | None = None) -> list[tuple[Path, Path]]:
     pairs: list[tuple[Path, Path]] = []
     seen: set[tuple[Path, Path]] = set()
 
@@ -50,7 +67,8 @@ def discover_pairs(trace_dir: Path) -> list[tuple[Path, Path]]:
         bg_path = answer_path.with_name(answer_path.name.removesuffix("_answer.png") + "_bg.png")
         add_pair(answer_path, bg_path)
 
-    return pairs
+    pairs.sort(key=lambda pair: pair[0].stat().st_mtime, reverse=newest_first)
+    return pairs[:limit] if limit else pairs
 
 
 def main() -> int:
@@ -62,6 +80,11 @@ def main() -> int:
     parser.add_argument("--trace-dir", type=Path, default=Path("data/captcha_samples"), help="Directory to scan for saved samples")
     parser.add_argument("--output-dir", type=Path, default=Path("data/captcha_samples/replay_reports"), help="Directory for JSON reports")
     parser.add_argument("--summary-only", action="store_true", help="Print one compact line per sample")
+    parser.add_argument("--limit", type=int, default=0, help="Maximum number of discovered samples to replay")
+    parser.add_argument("--newest-first", action="store_true", help="Replay newest discovered samples first")
+    parser.add_argument("--min-average-score", type=float, help="Override solver minimum average score")
+    parser.add_argument("--min-point-score", type=float, help="Override solver minimum per-point score")
+    parser.add_argument("--min-score-gap", type=float, help="Override solver minimum global score gap")
     args = parser.parse_args()
 
     if args.answer or args.background:
@@ -69,14 +92,21 @@ def main() -> int:
             parser.error("--answer and --background must be used together")
         pairs = [(args.answer, args.background)]
     else:
-        pairs = discover_pairs(args.trace_dir)
+        pairs = discover_pairs(args.trace_dir, newest_first=args.newest_first, limit=args.limit or None)
 
     if not pairs:
         print(f"No point-click samples found in {args.trace_dir}")
         return 1
 
     for answer_path, bg_path in pairs:
-        report = replay_pair(answer_path, bg_path, args.output_dir)
+        report = replay_pair(
+            answer_path,
+            bg_path,
+            args.output_dir,
+            min_average_score=args.min_average_score,
+            min_point_score=args.min_point_score,
+            min_score_gap=args.min_score_gap,
+        )
         if args.summary_only:
             print(
                 f"{answer_path.name}: accepted={report.get('accepted')} "
