@@ -121,7 +121,7 @@ class LoginManager:
             WebDriverWait(driver, timeout).until(
                 lambda d: self._confirm_login_success(d)
                 or self.tencent_captcha.has_captcha(d)
-                or bool(self._get_error_message(d, "//div[@class='errmsg-tip']//span"))
+                or bool(self._get_login_error_message(d))
             )
         except Exception:
             pass
@@ -130,12 +130,19 @@ class LoginManager:
             return "success"
         if self.tencent_captcha.has_captcha(driver):
             return "captcha"
-        if self._get_error_message(driver, "//div[@class='errmsg-tip']//span"):
+        if self._get_login_error_message(driver):
             return "error"
         return "unknown"
 
+    @staticmethod
+    def _allow_qr_after_rk001() -> bool:
+        return os.getenv("ALLOW_QR_FALLBACK_AFTER_RK001", "false").lower() == "true"
+
     def _login_with_credential_rotation(self, driver, phone_code: bool = False) -> bool:
         if self._is_password_login_in_cooldown():
+            if self._allow_qr_after_rk001():
+                logging.info("Password login is in RK001 cooldown; explicit QR fallback is enabled for this run.")
+                return self._fallback_login(driver)
             logging.info("Password login is in cooldown because recent attempts hit RK001. Skip this unattended run instead of switching to QR-code login.")
             return False
 
@@ -155,9 +162,17 @@ class LoginManager:
                 self._clear_password_login_cooldown()
                 return True
             logging.info("Login credential %s did not complete password login.", credential.label)
-            if self._password_login_blocked_this_run:
-                logging.info("Stop trying remaining credentials because password login hit RK001. Skip QR-code fallback for unattended operation.")
-                return False
+            if self._password_login_blocked_this_run and attempt + 1 < total_credentials:
+                logging.info("Password login hit RK001; trying the next configured login credential.")
+                self._password_login_blocked_this_run = False
+                continue
+
+        if self._is_password_login_in_cooldown() or self._password_login_blocked_this_run:
+            if self._allow_qr_after_rk001():
+                logging.info("All password credentials hit RK001; explicit QR fallback is enabled for this run.")
+                return self._fallback_login(driver)
+            logging.info("All password credentials hit RK001. Skip QR-code fallback for unattended operation.")
+            return False
 
         logging.info("All configured login credentials failed password login. Switch to configured fallback.")
         return self._fallback_login(driver)
@@ -166,9 +181,13 @@ class LoginManager:
         try:
             driver.get(LOGIN_URL)
             self._log_page_state(driver, "after_open_login_url")
-            WebDriverWait(driver, self.driver_wait_time * 3).until(
-                EC.visibility_of_element_located((By.CLASS_NAME, "user"))
-            )
+            driver.implicitly_wait(0)
+            try:
+                WebDriverWait(driver, self.driver_wait_time * 3).until(
+                    lambda d: d.find_elements(By.CLASS_NAME, "user") or d.find_elements(By.CSS_SELECTOR, ".wap-login")
+                )
+            finally:
+                driver.implicitly_wait(self.driver_wait_time)
         except Exception:
             logging.debug("Login failed, open URL: %s failed.", LOGIN_URL)
         logging.info("Open LOGIN_URL:%s.\r", LOGIN_URL)
@@ -183,6 +202,9 @@ class LoginManager:
             WebDriverWait(driver, 10).until(EC.invisibility_of_element_located((By.CLASS_NAME, "el-loading-mask")))
         finally:
             driver.implicitly_wait(self.driver_wait_time)
+
+        if self._is_mobile_login_page(driver):
+            return self._login_mobile_password(driver, allow_fallback=allow_fallback)
 
         element = WebDriverWait(driver, self.driver_wait_time).until(
             EC.presence_of_element_located((By.CLASS_NAME, "user"))
@@ -240,7 +262,7 @@ class LoginManager:
             if self._confirm_login_success(driver):
                 return True
             if post_login_state == "error":
-                error_message = self._get_error_message(driver, "//div[@class='errmsg-tip']//span")
+                error_message = self._get_login_error_message(driver)
                 logging.info(
                     "Password login returned a page error without a usable session: %s. Switch to QR-code login fallback.",
                     error_message or "<empty>",
@@ -258,6 +280,136 @@ class LoginManager:
                 logging.info("Password login result is still unknown after waiting. Capture page state before QR-code fallback.")
                 self._log_page_state(driver, "after_submit_password_login_unknown")
             logging.info("Tencent captcha was not detected after password submit. Switch to QR-code login fallback.")
+        if not allow_fallback:
+            return False
+        return self._fallback_login(driver)
+
+    def _is_mobile_login_page(self, driver) -> bool:
+        try:
+            return bool(driver.find_elements(By.CSS_SELECTOR, ".wap-login"))
+        except Exception:
+            return False
+
+    def _ensure_mobile_agreement_checked(self, driver, password_form) -> None:
+        result = driver.execute_script(
+            r"""
+            const form = arguments[0];
+            const clickControl = (el) => {
+              if (!el) return {found: false, clicked: false, reason: 'empty'};
+              const before = String(el.className || '');
+              el.click();
+              const after = String(el.className || '');
+              return {found: true, clicked: true, reason: 'clicked', beforeClassName: before, afterClassName: after};
+            };
+
+            const direct = form.querySelector('.checked-box, .check-box, [class*="check"]');
+            if (direct) return clickControl(direct);
+
+            const textNodes = Array.from(form.querySelectorAll('*')).filter((el) => {
+              const text = String(el.innerText || el.textContent || '');
+              return text.includes('服务条款') || text.includes('95598网站服务条款');
+            });
+            for (const node of textNodes) {
+              const containers = [];
+              let current = node;
+              for (let i = 0; current && i < 5; i += 1) {
+                containers.push(current);
+                current = current.parentElement;
+              }
+              for (const container of containers) {
+                const control = container.querySelector && container.querySelector('.checked-box, .check-box, [class*="check"]');
+                if (control) return clickControl(control);
+              }
+            }
+            return {found: false, clicked: false, reason: 'not_found'};
+            """,
+            password_form,
+        )
+        logging.info("Mobile agreement check result: %s", result)
+
+    def _login_mobile_password(self, driver, allow_fallback: bool = True) -> bool:
+        if not self._password:
+            return False
+
+        self._set_login_method("password-mobile")
+        logging.info("Detected mobile login page; use mobile password login flow.")
+
+        password_tab_xpath = (
+            "//div[contains(@class,'wap-login')]"
+            "//div[contains(@class,'normal-title') and contains(normalize-space(.),'密码登录')]"
+        )
+        try:
+            tab = WebDriverWait(driver, self.driver_wait_time).until(
+                EC.presence_of_element_located((By.XPATH, password_tab_xpath))
+            )
+            driver.execute_script("arguments[0].click();", tab)
+            self._step_sleep(driver, "after_switch_to_mobile_password_tab")
+
+            password_form = WebDriverWait(driver, self.driver_wait_time).until(
+                lambda d: next(
+                    (el for el in d.find_elements(By.CSS_SELECTOR, ".wap-pass-login") if el.is_displayed()),
+                    None,
+                )
+            )
+            self._ensure_mobile_agreement_checked(driver, password_form)
+
+            input_elements = password_form.find_elements(By.CLASS_NAME, "el-input__inner")
+            if len(input_elements) < 2:
+                raise RuntimeError("mobile password form inputs not found")
+            input_elements[0].clear()
+            input_elements[0].send_keys(self._account)
+            logging.info("input_elements account : %s\r", mask_account(self._account))
+            input_elements[1].clear()
+            input_elements[1].send_keys(self._password)
+            logging.info("input_elements password : ********\r")
+
+            login_button = password_form.find_element(By.CSS_SELECTOR, ".login-Btn")
+            driver.execute_script("arguments[0].click();", login_button)
+            self._step_sleep(driver, "after_submit_mobile_password_login")
+            logging.info("Click mobile login button.\r")
+        except Exception as exc:
+            logging.info("Mobile password login form operation failed: %s", exc)
+            self._log_page_state(driver, "mobile_password_login_form_failed")
+            if not allow_fallback:
+                return False
+            return self._fallback_login(driver)
+
+        post_login_state = self._wait_for_post_password_login_state(driver)
+        logging.info("Post mobile password-login state: %s", post_login_state)
+        if post_login_state == "captcha":
+            captcha_info = self.tencent_captcha.get_info(driver)
+            logging.info(
+                "Tencent captcha widget detected after mobile password submit, mode=%s, prompt=%s.",
+                captcha_info.get("mode"),
+                captcha_info.get("prompt", ""),
+            )
+            self.tencent_captcha.capture_state(driver, "after_submit_mobile_password_login_tencent_captcha")
+            if captcha_info.get("mode") == "point_click" and self.tencent_captcha.solve_point_click_captcha(driver):
+                return True
+            if not allow_fallback:
+                return False
+            logging.info("Tencent captcha local solver did not complete mobile login. Switch to QR-code login fallback.")
+            return self._fallback_login(driver)
+
+        if self._confirm_login_success(driver):
+            return True
+
+        if post_login_state == "error":
+            error_message = self._get_login_error_message(driver)
+            logging.info(
+                "Mobile password login returned a page error without a usable session: %s.",
+                error_message or "<empty>",
+            )
+            if self._is_rk001_error(error_message):
+                self._record_password_login_cooldown(error_message)
+            self._log_page_state(driver, "after_submit_mobile_password_login_error")
+            self._save_tencent_presence(driver)
+            if not allow_fallback:
+                return False
+            return self._fallback_login(driver)
+
+        logging.info("Mobile password login result is still unknown after waiting.")
+        self._log_page_state(driver, "after_submit_mobile_password_login_unknown")
         if not allow_fallback:
             return False
         return self._fallback_login(driver)
@@ -280,6 +432,26 @@ class LoginManager:
             return None
         finally:
             driver.implicitly_wait(self.driver_wait_time)
+
+    def _get_login_error_message(self, driver) -> Optional[str]:
+        for path in (
+            "//div[@class='errmsg-tip']//span",
+            "//*[contains(@class,'errmsg-tip')]",
+            "//*[contains(@class,'el-message')]",
+            "//*[contains(@class,'error') or contains(@class,'err')]",
+        ):
+            message = self._get_error_message(driver, path)
+            if message:
+                return message.strip()
+        try:
+            body_text = driver.find_element(By.TAG_NAME, "body").text or ""
+        except Exception:
+            return None
+        for marker in ("RK001", "GB013", "请求异常", "网络连接超时"):
+            if marker in body_text:
+                lines = [line.strip() for line in body_text.splitlines() if marker in line]
+                return lines[0] if lines else marker
+        return None
 
     @staticmethod
     def _is_rk001_error(error_message: Optional[str]) -> bool:

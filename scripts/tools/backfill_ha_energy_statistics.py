@@ -3,13 +3,16 @@ import shutil
 import sqlite3
 from bisect import bisect_right
 from dataclasses import dataclass
+from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from scripts.support.credentials import mask_user_id
+
 
 DEFAULT_SOURCE_DB = Path("data/homeassistant.db")
-DEFAULT_HA_DB = Path("/home/pi/ha/config/home-assistant_v2.db")
+DEFAULT_HA_DB = Path("/home/pi/apps/services/ha/config/home-assistant_v2.db")
 
 
 @dataclass(frozen=True)
@@ -44,12 +47,24 @@ def parse_args():
         help="Home Assistant statistic_id for total electricity cost.",
     )
     parser.add_argument("--timezone", default="Asia/Shanghai", help="Timezone used by Home Assistant.")
+    parser.add_argument(
+        "--reconcile-monthly-totals",
+        action="store_true",
+        help="Reconcile complete daily months to the matching 95598 monthly bill totals.",
+    )
     parser.add_argument("--apply", action="store_true", help="Actually write Home Assistant DB.")
+    parser.add_argument(
+        "--clamp-after-last",
+        action="store_true",
+        help="Set later existing recorder points to the final source cumulative value.",
+    )
     parser.add_argument("--no-backup", action="store_true", help="Do not create a DB backup before writing.")
     return parser.parse_args()
 
 
-def load_daily_rows(source_db: Path, user_id: str) -> list[DailyEnergyRow]:
+def load_daily_rows(
+    source_db: Path, user_id: str, *, reconcile_monthly_totals: bool = False
+) -> list[DailyEnergyRow]:
     conn = sqlite3.connect(source_db)
     try:
         cursor = conn.cursor()
@@ -74,8 +89,63 @@ def load_daily_rows(source_db: Path, user_id: str) -> list[DailyEnergyRow]:
         conn.close()
 
     if not rows:
-        raise RuntimeError(f"No daily rows found in {source_db} for user_id={user_id}")
+        raise RuntimeError(f"No daily rows found in {source_db} for user_id={mask_user_id(user_id)}")
+    if reconcile_monthly_totals:
+        rows = reconcile_complete_months(source_db, user_id, rows)
     return rows
+
+
+def reconcile_complete_months(
+    source_db: Path, user_id: str, rows: list[DailyEnergyRow]
+) -> list[DailyEnergyRow]:
+    """Align completed daily months to their final 95598 bill totals.
+
+    The portal can apply small settlement adjustments when a month closes. Keep the
+    daily shape and place that adjustment on the final available day of a complete
+    month so the cumulative energy statistic matches the published total sensor.
+    """
+    by_month: dict[str, list[DailyEnergyRow]] = {}
+    for row in rows:
+        by_month.setdefault(row.day.strftime("%Y-%m"), []).append(row)
+
+    conn = sqlite3.connect(source_db)
+    try:
+        billed = {
+            month: (float(usage or 0), float(charge or 0))
+            for month, usage, charge in conn.execute(
+                """
+                SELECT month, total_usage, total_charge
+                FROM monthly_usage
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        }
+    finally:
+        conn.close()
+
+    reconciled = list(rows)
+    positions = {row.day: index for index, row in enumerate(reconciled)}
+    for month, month_rows in by_month.items():
+        month_rows.sort(key=lambda item: item.day)
+        first_day = month_rows[0].day
+        last_day = month_rows[-1].day
+        expected_last_day = monthrange(first_day.year, first_day.month)[1]
+        if first_day.day != 1 or last_day.day != expected_last_day or month not in billed:
+            continue
+        billed_usage, billed_charge = billed[month]
+        usage_delta = round(billed_usage - sum(item.usage for item in month_rows), 2)
+        charge_delta = round(billed_charge - sum(item.charge for item in month_rows), 2)
+        if usage_delta == 0 and charge_delta == 0:
+            continue
+        index = positions[last_day]
+        target = reconciled[index]
+        reconciled[index] = DailyEnergyRow(
+            day=target.day,
+            usage=round(target.usage + usage_delta, 2),
+            charge=round(target.charge + charge_delta, 2),
+        )
+    return reconciled
 
 
 def build_daily_boundary_points(rows: list[DailyEnergyRow], tz: ZoneInfo, value_attr: str) -> list[StatisticPoint]:
@@ -152,6 +222,8 @@ def update_existing_statistics_rows(
     table: str,
     metadata_id: int,
     points: list[StatisticPoint],
+    *,
+    clamp_after_last: bool = False,
 ) -> int:
     first_ts = points[0].start_ts
     last_point = points[-1]
@@ -162,10 +234,13 @@ def update_existing_statistics_rows(
             f"""
             SELECT id, start_ts
             FROM {table}
-            WHERE metadata_id = ? AND start_ts >= ? AND start_ts <= ?
+            WHERE metadata_id = ? AND start_ts >= ?
+            """ + ("" if clamp_after_last else " AND start_ts <= ?") + """
             ORDER BY start_ts
             """,
-            (metadata_id, first_ts, last_point.start_ts),
+            (metadata_id, first_ts)
+            if clamp_after_last
+            else (metadata_id, first_ts, last_point.start_ts),
         )
         rows = cursor.fetchall()
         updates = []
@@ -203,11 +278,21 @@ def normalize_sum_to_state(conn: sqlite3.Connection, metadata_id: int) -> dict[s
     return results
 
 
-def backfill_one_statistic(conn: sqlite3.Connection, statistic_id: str, points: list[StatisticPoint]) -> dict:
+def backfill_one_statistic(
+    conn: sqlite3.Connection,
+    statistic_id: str,
+    points: list[StatisticPoint],
+    *,
+    clamp_after_last: bool = False,
+) -> dict:
     metadata_id = get_metadata_id(conn, statistic_id)
     upsert_statistics_points(conn, metadata_id, points)
-    updated_statistics = update_existing_statistics_rows(conn, "statistics", metadata_id, points)
-    updated_short_term = update_existing_statistics_rows(conn, "statistics_short_term", metadata_id, points)
+    updated_statistics = update_existing_statistics_rows(
+        conn, "statistics", metadata_id, points, clamp_after_last=clamp_after_last
+    )
+    updated_short_term = update_existing_statistics_rows(
+        conn, "statistics_short_term", metadata_id, points, clamp_after_last=clamp_after_last
+    )
     return {
         "statistic_id": statistic_id,
         "metadata_id": metadata_id,
@@ -225,7 +310,9 @@ def main():
     ha_db = Path(args.ha_db)
     tz = ZoneInfo(args.timezone)
 
-    daily_rows = load_daily_rows(source_db, args.user_id)
+    daily_rows = load_daily_rows(
+        source_db, args.user_id, reconcile_monthly_totals=args.reconcile_monthly_totals
+    )
     usage_points = build_daily_boundary_points(daily_rows, tz, "usage")
     charge_points = build_daily_boundary_points(daily_rows, tz, "charge")
 
@@ -242,8 +329,12 @@ def main():
 
     conn = sqlite3.connect(ha_db, timeout=30)
     try:
-        usage_result = backfill_one_statistic(conn, args.usage_statistic_id, usage_points)
-        charge_result = backfill_one_statistic(conn, args.charge_statistic_id, charge_points)
+        usage_result = backfill_one_statistic(
+            conn, args.usage_statistic_id, usage_points, clamp_after_last=args.clamp_after_last
+        )
+        charge_result = backfill_one_statistic(
+            conn, args.charge_statistic_id, charge_points, clamp_after_last=args.clamp_after_last
+        )
         usage_result["normalized"] = normalize_sum_to_state(conn, usage_result["metadata_id"])
         charge_result["normalized"] = normalize_sum_to_state(conn, charge_result["metadata_id"])
         conn.commit()

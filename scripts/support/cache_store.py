@@ -1,5 +1,6 @@
 import json
 import logging
+from scripts.support.credentials import mask_user_id
 from datetime import datetime
 from pathlib import Path
 
@@ -87,13 +88,13 @@ class CacheStore:
         has_user_data = False
         for user_id, entry in data.items():
             if not isinstance(entry, dict):
-                logging.info("Startup fetch cannot be skipped because cache entry for %s is invalid.", user_id)
+                logging.info("Startup fetch cannot be skipped because cache entry for %s is invalid.", mask_user_id(user_id))
                 return False
 
             user_data = entry.get("data", {})
             progress = entry.get("progress", {})
             if not user_data:
-                logging.info("Startup fetch cannot be skipped because cache entry for %s has no data.", user_id)
+                logging.info("Startup fetch cannot be skipped because cache entry for %s has no data.", mask_user_id(user_id))
                 return False
 
             has_user_data = True

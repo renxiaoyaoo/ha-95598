@@ -7,6 +7,7 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 from scripts.support.cache_store import CacheStore
+from scripts.support.credentials import mask_user_id
 from scripts.support.db import SqliteDB
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
@@ -181,8 +182,9 @@ class SensorUpdater:
             "value_template": "{{ value_json.state }}",
             "device": self._device_payload(user_id),
             "icon": icon,
-            "state_class": state_class,
         }
+        if state_class:
+            payload["state_class"] = state_class
         if unit:
             payload["unit_of_measurement"] = unit
         if device_class:
@@ -226,6 +228,7 @@ class SensorUpdater:
         peak_usage: float = None,
         tip_usage: float = None,
         notify_stale: bool = True,
+        log_success: bool = True,
     ):
         self._save_to_cache(
             user_id,
@@ -266,7 +269,8 @@ class SensorUpdater:
             self.update_tou_data(user_id, postfix, last_daily_date, valley_usage, flat_usage, peak_usage, tip_usage)
             self.update_period_tou_data(user_id, postfix)
 
-        logging.info(f"User {user_id} state-refresh task run successfully!")
+        if log_success:
+            logging.info("User %s state-refresh task run successfully!", mask_user_id(user_id))
 
     def _get_cache_file(self):
         return str(self.cache_store.cache_file)
@@ -358,15 +362,16 @@ class SensorUpdater:
 
         try:
             for user_id, values in data.items():
-                logging.info("Republishing cached data for user %s", user_id)
+                logging.info("Republishing cached data for user %s", mask_user_id(user_id))
                 if not isinstance(values, dict):
-                    logging.warning("Skip invalid cache entry for user %s: %r", user_id, values)
+                    logging.warning("Skip invalid cache entry for user %s: %r", mask_user_id(user_id), values)
                     continue
                 user_data = values.get("data", {})
                 clean_values = {k: v for k, v in user_data.items() if k != 'timestamp'}
                 if not clean_values:
                     continue
-                self.update_one_userid(user_id, notify_stale=False, **clean_values)
+                self.update_one_userid(user_id, notify_stale=False, log_success=False, **clean_values)
+                logging.info("Cached data republished for user %s.", mask_user_id(user_id))
             return True
         except Exception as e:
             logging.error(f"Failed to republish data: {e}")
@@ -428,7 +433,7 @@ class SensorUpdater:
             unit="kWh",
             icon="mdi:lightning-bolt",
             device_class="energy",
-            state_class="measurement",
+            state_class="",
             extra_attributes=extra_attributes,
         )
         logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} kWh, last_daily_date{last_daily_date}")
@@ -445,7 +450,7 @@ class SensorUpdater:
             unit="CNY",
             icon="mdi:cash",
             device_class="monetary",
-            state_class="measurement",
+            state_class="",
             extra_attributes=extra_attributes,
         )
         logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} CNY, last_daily_date{last_daily_date}")
@@ -483,7 +488,7 @@ class SensorUpdater:
             unit="kWh",
             icon=icon,
             device_class="energy",
-            state_class="measurement",
+            state_class="",
             extra_attributes={
                 "last_reset": datetime.strptime(last_daily_date, "%Y-%m-%d").strftime("%Y-%m-%dT00:00:00+00:00"),
             },
@@ -501,6 +506,12 @@ class SensorUpdater:
         if db is None:
             return None
         return db.get_current_year_daily_summary()
+
+    def _get_latest_daily_month_summary(self, user_id: str):
+        db = self._ensure_db(user_id)
+        if db is None:
+            return None
+        return db.get_latest_daily_month_summary()
 
     def _get_total_monthly_summary(self, user_id: str):
         db = self._ensure_db(user_id)
@@ -522,13 +533,16 @@ class SensorUpdater:
             unit="kWh",
             icon=icon,
             device_class="energy",
-            state_class="measurement",
+            state_class="total",
             extra_attributes={"period": period_value},
         )
         logging.info("Homeassistant sensor %s state updated: %s kWh (period=%s)", sensor_name, sensor_state, period_value)
 
     def update_period_tou_data(self, user_id: str, postfix: str):
-        current_month_summary = self._get_current_month_daily_summary(user_id)
+        current_month_summary = (
+            self._get_current_month_daily_summary(user_id)
+            or self._get_latest_daily_month_summary(user_id)
+        )
         if current_month_summary is not None:
             values = {
                 "valley_usage": current_month_summary["valley_usage"],
@@ -578,7 +592,10 @@ class SensorUpdater:
             if usage
             else MONTH_CHARGE_SENSOR_NAME + postfix
         )
-        current_month_summary = self._get_current_month_daily_summary(user_id)
+        current_month_summary = (
+            self._get_current_month_daily_summary(user_id)
+            or self._get_latest_daily_month_summary(user_id)
+        )
         if current_month_summary is not None:
             sensorState = current_month_summary["usage" if usage else "charge"]
             period = current_month_summary["period"]
@@ -591,7 +608,7 @@ class SensorUpdater:
             unit="kWh" if usage else "CNY",
             icon="mdi:lightning-bolt" if usage else "mdi:cash",
             device_class="energy" if usage else "monetary",
-            state_class="measurement",
+            state_class="total",
             extra_attributes={"period": period},
         )
         if current_month_summary is not None:
@@ -619,7 +636,7 @@ class SensorUpdater:
             unit="kWh" if usage else "CNY",
             icon="mdi:lightning-bolt" if usage else "mdi:cash",
             device_class="energy" if usage else "monetary",
-            state_class="total_increasing",
+            state_class="total",
             extra_attributes={"last_reset": last_reset},
         )
         logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} {'kWh' if usage else 'CNY'}")
@@ -642,7 +659,7 @@ class SensorUpdater:
             unit="kWh" if usage else "CNY",
             icon="mdi:home-lightning-bolt-outline" if usage else "mdi:cash-multiple",
             device_class="energy" if usage else "monetary",
-            state_class="total_increasing",
+            state_class="total",
         )
         logging.info(
             "Homeassistant sensor %s state updated: %s %s",
@@ -664,7 +681,7 @@ class SensorUpdater:
             unit="kWh",
             icon="mdi:chart-timeline-variant",
             device_class="energy",
-            state_class="measurement",
+            state_class="",
             extra_attributes={
                 "latest_date": history["latest_date"],
                 "series_days": history["series_days"],

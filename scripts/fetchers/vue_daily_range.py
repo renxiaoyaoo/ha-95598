@@ -92,6 +92,17 @@ class VueDailyRangeCollector:
         date_text = str(row.get("date") or "").strip()
         if not date_text:
             return None
+        usage_values = [
+            row.get("total_usage"),
+            row.get("valley_usage"),
+            row.get("flat_usage"),
+            row.get("peak_usage"),
+            row.get("tip_usage"),
+        ]
+        # The site includes an unfinished day as a dated row with every value blank.
+        # Keep explicit 0.00 readings, but do not persist this placeholder as real usage.
+        if all(cls._is_missing_value(value) for value in usage_values):
+            return None
         return {
             "date": date_text,
             "total_usage": cls._safe_float(row.get("total_usage"), 0.0),
@@ -100,6 +111,10 @@ class VueDailyRangeCollector:
             "peak_usage": cls._safe_float(row.get("peak_usage"), 0.0),
             "tip_usage": cls._safe_float(row.get("tip_usage"), 0.0),
         }
+
+    @staticmethod
+    def _is_missing_value(value: Any) -> bool:
+        return value is None or str(value).strip() in ("", "-", "—", "None")
 
     @staticmethod
     def _safe_float(value: Any, default: float = 0.0) -> float:

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -15,9 +16,9 @@ class CaptchaLearningStore:
     """
 
     DEFAULT_THRESHOLDS = {
-        "min_average_score": 0.42,
-        "min_point_score": 0.20,
-        "min_score_gap": 0.005,
+        "min_average_score": 0.38,
+        "min_point_score": 0.18,
+        "min_score_gap": 0.001,
     }
     MIN_FAILURE_SAMPLES_FOR_TIGHTENING = 5
     SUCCESS_MARGIN = 0.04
@@ -53,17 +54,31 @@ class CaptchaLearningStore:
             if isinstance(item.get("min_point_score"), (int, float))
         ]
 
-        if len(failure_scores) >= self.MIN_FAILURE_SAMPLES_FOR_TIGHTENING:
-            thresholds["min_average_score"] = min(max(thresholds["min_average_score"], max(failure_scores) + 0.02), 0.72)
-        if len(failure_point_scores) >= self.MIN_FAILURE_SAMPLES_FOR_TIGHTENING:
-            thresholds["min_point_score"] = min(max(thresholds["min_point_score"], max(failure_point_scores) + 0.02), 0.55)
+        if os.getenv("CAPTCHA_LEARNING_TIGHTEN_ON_FAILURE", "false").lower() == "true":
+            if len(failure_scores) >= self.MIN_FAILURE_SAMPLES_FOR_TIGHTENING:
+                thresholds["min_average_score"] = min(max(thresholds["min_average_score"], max(failure_scores) + 0.02), 0.55)
+            if len(failure_point_scores) >= self.MIN_FAILURE_SAMPLES_FOR_TIGHTENING:
+                thresholds["min_point_score"] = min(max(thresholds["min_point_score"], max(failure_point_scores) + 0.02), 0.45)
 
         if success_scores:
-            success_cap = max(self.DEFAULT_THRESHOLDS["min_average_score"], min(success_scores) - self.SUCCESS_MARGIN)
+            success_cap = max(0.32, min(success_scores) - 0.08)
             thresholds["min_average_score"] = min(thresholds["min_average_score"], success_cap)
         if success_point_scores:
-            point_cap = max(self.DEFAULT_THRESHOLDS["min_point_score"], min(success_point_scores) - self.SUCCESS_MARGIN)
+            point_cap = max(0.12, min(success_point_scores) - 0.08)
             thresholds["min_point_score"] = min(thresholds["min_point_score"], point_cap)
+
+        env_map = {
+            "min_average_score": "CAPTCHA_MIN_AVERAGE_SCORE",
+            "min_point_score": "CAPTCHA_MIN_POINT_SCORE",
+            "min_score_gap": "CAPTCHA_MIN_SCORE_GAP",
+        }
+        for key, env_name in env_map.items():
+            raw = os.getenv(env_name)
+            if raw not in (None, ""):
+                try:
+                    thresholds[key] = float(raw)
+                except ValueError:
+                    logging.warning("Ignore invalid %s=%s", env_name, raw)
         return thresholds
 
     def record(self, outcome: str, answer_image, bg_image, diagnostics: dict, suffix: str) -> None:

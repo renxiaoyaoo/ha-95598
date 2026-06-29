@@ -24,13 +24,18 @@ def auto_replay_once(data_dir: Path) -> None:
     if _already_ran_today(state_path, today):
         return
 
-    trace_dir = data_dir / "pages"
+    trace_dir = sample_dir
     output_dir = sample_dir / "replay_reports"
     pairs = discover_pairs(trace_dir)
+    pairs.sort(key=lambda pair: pair[0].stat().st_mtime)
+    sample_limit = int(os.getenv("CAPTCHA_AUTO_REPLAY_SAMPLE_LIMIT", "80"))
+    if sample_limit > 0 and len(pairs) > sample_limit:
+        pairs = pairs[-sample_limit:]
     summary = {
         "date": today,
         "trace_dir": str(trace_dir),
         "sample_count": len(pairs),
+        "sample_limit": sample_limit,
         "accepted_count": 0,
         "rejected_count": 0,
         "rejection_reasons": {},

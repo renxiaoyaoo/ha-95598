@@ -223,10 +223,17 @@ class TencentCaptchaHandler:
                   exists('.tencent-captcha-dy__click-word') ||
                   exists('.tencent-captcha-dy__point-area') ||
                   exists('.tencent-captcha-dy__word-content');
+                const hasSlider =
+                  /拖动.*拼图|拖动下方拼图|滑动验证/i.test(prompt) ||
+                  exists('.tencent-captcha-dy__slider') ||
+                  exists('[class*="tencent-captcha-dy__slider"]') ||
+                  exists('[class*="slider-btn"]');
 
                 let mode = 'unknown';
                 if (hasPointClick) {
                   mode = 'point_click';
+                } else if (hasSlider) {
+                  mode = 'slider';
                 }
                 return {
                   mode,
@@ -234,6 +241,7 @@ class TencentCaptchaHandler:
                   has_mask: exists('.tencent-captcha-dy__mask, .tencent-captcha__mask-layer'),
                   has_point_area: exists('.tencent-captcha-dy__point-area, .tencent-captcha-dy__click-word'),
                   has_click_type_wrap: exists('.tencent-captcha-dy__click-type-wrap'),
+                  has_slider: hasSlider,
                 };
                 """
             ) or {"mode": "unknown", "prompt": ""}

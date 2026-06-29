@@ -30,19 +30,26 @@ def schedule_jobs(fetcher, updater, job_start_time: str, job_times: int, retry_t
 
 
 def run_task(data_fetcher, retry_times_limit: int):
+    logging.info("Scheduled state-refresh task started.")
+    success = False
     try:
         for retry_times in range(1, retry_times_limit + 1):
             try:
                 data_fetcher.fetch()
+                success = True
+                logging.info("Scheduled state-refresh task completed successfully.")
                 return
             except Exception as exc:
                 logging.error(
-                    "state-refresh task failed, reason is [%s], %s retry times left.",
+                    "Scheduled state-refresh task failed, reason is [%s], %s retry times left.",
                     exc,
                     retry_times_limit - retry_times,
                 )
+        logging.error("Scheduled state-refresh task failed after %s attempt(s).", retry_times_limit)
     finally:
         auto_replay_once(DATA_DIR)
+        if not success:
+            logging.info("Scheduled state-refresh task ended without new data.")
 
 
 def run_forever() -> None:

@@ -178,6 +178,36 @@ PUBLISH_TOU_DETAIL_SENSORS=true
 
 详细的 Home Assistant 能源面板配置、日用电图表 YAML 和效果图都放在 [examples/README.md](examples/README.md)。
 
+### 能源面板日期修正
+
+Home Assistant 能源面板读取的是 recorder long-term statistics，不是实体属性里的日历史。普通 MQTT 发布只能更新“当前总量”：如果程序停更几天后一次补到多天数据，HA 可能会把这几天的差额全部记到补抓当天。
+
+需要能源面板也按真实日期显示时，可以开启 recorder 回填。开启后，每次抓取成功都会根据本地 SQLite 的 `daily_usage` 重建总电量和总电费的每日累计点，并写入 HA recorder statistics。
+
+1. 在 compose 里挂载 Home Assistant 配置目录。
+
+```yaml
+volumes:
+  - ./data:/app/data
+  - ./config:/app/config:ro
+  - /你的/home-assistant/config:/ha-config
+```
+
+2. 在 `.env` 中启用。
+
+```env
+HA_ENERGY_BACKFILL_ENABLED=true
+HA_RECORDER_DB_PATH=/ha-config/home-assistant_v2.db
+```
+
+首次开启建议同时设置：
+
+```env
+HA_ENERGY_BACKFILL_BACKUP=true
+```
+
+确认能源面板显示正常后，可以把备份关闭，避免每天产生数据库备份文件。更多可选项见 [example.env](example.env) 中的“Home Assistant 能源面板日期修正”。
+
 ## 数据和文件
 
 运行数据位于 `data/`：
@@ -245,7 +275,13 @@ python3.12 -m venv .venv
 代码检查：
 
 ```bash
-python3 -m py_compile scripts/*.py scripts/fetchers/*.py scripts/pages/*.py scripts/support/*.py scripts/tools/*.py captcha_solver/*.py tests/*.py
+python3 scripts/tools/syntax_check.py
+```
+
+提交前隐私检查：
+
+```bash
+python3 scripts/tools/privacy_check.py --staged
 ```
 
 单元测试：

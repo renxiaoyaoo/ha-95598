@@ -27,16 +27,29 @@ def replay_pair(answer_path: Path, bg_path: Path, output_dir: Path | None = None
 
 
 def discover_pairs(trace_dir: Path) -> list[tuple[Path, Path]]:
-    pairs = []
-    pattern = re.compile(r"^tencent_point_click_answer_(.+)\.png$")
-    for answer_path in sorted(trace_dir.glob("tencent_point_click_answer_*.png")):
-        match = pattern.match(answer_path.name)
+    pairs: list[tuple[Path, Path]] = []
+    seen: set[tuple[Path, Path]] = set()
+
+    def add_pair(answer_path: Path, bg_path: Path) -> None:
+        key = (answer_path.resolve(), bg_path.resolve())
+        if bg_path.exists() and key not in seen:
+            seen.add(key)
+            pairs.append((answer_path, bg_path))
+
+    # Legacy trace files saved directly under data/pages/.
+    legacy_pattern = re.compile(r"^tencent_point_click_answer_(.+)\.png$")
+    for answer_path in sorted(trace_dir.rglob("tencent_point_click_answer_*.png")):
+        match = legacy_pattern.match(answer_path.name)
         if not match:
             continue
         suffix = match.group(1)
-        bg_path = trace_dir / f"tencent_point_click_bg_{suffix}.png"
-        if bg_path.exists():
-            pairs.append((answer_path, bg_path))
+        add_pair(answer_path, answer_path.with_name(f"tencent_point_click_bg_{suffix}.png"))
+
+    # Learning samples saved under data/captcha_samples/{success,failed_click,rejected}/.
+    for answer_path in sorted(trace_dir.rglob("*_answer.png")):
+        bg_path = answer_path.with_name(answer_path.name.removesuffix("_answer.png") + "_bg.png")
+        add_pair(answer_path, bg_path)
+
     return pairs
 
 
@@ -46,8 +59,8 @@ def main() -> int:
     )
     parser.add_argument("--answer", type=Path, help="Path to tencent_point_click_answer_*.png")
     parser.add_argument("--background", "--bg", dest="background", type=Path, help="Path to tencent_point_click_bg_*.png")
-    parser.add_argument("--trace-dir", type=Path, default=Path("data/pages"), help="Directory to scan for saved samples")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/pages/replay_reports"), help="Directory for JSON reports")
+    parser.add_argument("--trace-dir", type=Path, default=Path("data/captcha_samples"), help="Directory to scan for saved samples")
+    parser.add_argument("--output-dir", type=Path, default=Path("data/captcha_samples/replay_reports"), help="Directory for JSON reports")
     parser.add_argument("--summary-only", action="store_true", help="Print one compact line per sample")
     args = parser.parse_args()
 

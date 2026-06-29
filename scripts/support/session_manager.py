@@ -11,11 +11,12 @@ from scripts.const import HOME_URL, LOGIN_URL
 class SessionManager:
     """Persist and restore 95598 browser session state."""
 
-    def __init__(self, session_file: Path, can_use_session, log_page_state, step_sleep):
+    def __init__(self, session_file: Path, can_use_session, log_page_state, step_sleep, driver_wait_time: int = 0):
         self.session_file = session_file
         self._can_use_session = can_use_session
         self._log_page_state = log_page_state
         self._step_sleep = step_sleep
+        self.driver_wait_time = driver_wait_time
 
     def clear(self) -> None:
         try:
@@ -103,7 +104,10 @@ class SessionManager:
                 logging.info("Session file %s has no cookies, skip restore.", self.session_file)
                 return False
 
-            driver.get("https://95598.cn/")
+            # Open the /osgweb path first so path-scoped 95598 cookies can be restored.
+            driver.get(LOGIN_URL)
+            restored_count = 0
+            skipped_count = 0
             for cookie in cookies:
                 restored_cookie = dict(cookie)
                 same_site = restored_cookie.get("sameSite")
@@ -111,8 +115,15 @@ class SessionManager:
                     restored_cookie.pop("sameSite", None)
                 try:
                     driver.add_cookie(restored_cookie)
+                    restored_count += 1
                 except Exception as exc:
+                    skipped_count += 1
                     logging.debug("Skip one cookie during session restore: %s", exc)
+            logging.info(
+                "Restored persisted session cookies: restored=%s skipped=%s.",
+                restored_count,
+                skipped_count,
+            )
 
             try:
                 local_storage = storage.get("local_storage") or {}
@@ -133,7 +144,12 @@ class SessionManager:
             driver.get(HOME_URL)
             self._log_page_state(driver, "after_restore_session_open_home")
             self._step_sleep(driver, "after_restore_session_open_home")
-            if self._can_use_session(driver):
+            driver.implicitly_wait(0)
+            try:
+                session_usable = self._can_use_session(driver)
+            finally:
+                driver.implicitly_wait(self.driver_wait_time)
+            if session_usable:
                 logging.info("Reused persisted login session successfully.")
                 return True
 

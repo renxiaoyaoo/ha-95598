@@ -2,6 +2,7 @@
 
 import io
 import logging
+from scripts.support.credentials import mask_user_id
 import os
 from dataclasses import dataclass
 from typing import Protocol
@@ -67,7 +68,7 @@ class TelegramNotifier:
     def send_stale_data_alert(self, user_id: str, latest_date: str, stale_days: int) -> bool:
         message = (
             f"国网数据停更告警\n"
-            f"用户号：{user_id}\n"
+            f"用户号：{mask_user_id(user_id)}\n"
             f"最新日电量日期：{latest_date}\n"
             f"距离今天已落后：{stale_days}天\n"
             f"请检查登录、验证码或网站状态。"
@@ -75,7 +76,7 @@ class TelegramNotifier:
         if self._send_message(message):
             logging.info(
                 "Telegram stale data notice has been sent for user %s, latest_date=%s, stale_days=%s.",
-                user_id,
+                mask_user_id(user_id),
                 latest_date,
                 stale_days,
             )

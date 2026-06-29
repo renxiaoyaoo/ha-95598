@@ -5,6 +5,8 @@ from scripts.fetchers.vue_daily_range import VueDailyRangeCollector
 from scripts.pages.usage_page import UsagePage
 from scripts.sensor_updater import SensorUpdater
 from scripts.support.error_watcher import ErrorWatcher
+from scripts.support.credentials import mask_user_id
+from scripts.support.ha_energy_backfiller import HaEnergyStatisticsBackfiller
 
 
 class DailyRangeFetchService:
@@ -28,6 +30,7 @@ class DailyRangeFetchService:
         self.step_sleep = step_sleep
         self.log_page_state = log_page_state
         self.db = db
+        self.ha_energy_backfiller = HaEnergyStatisticsBackfiller(db.db_path) if db is not None else None
         self.tou_price_resolver = tou_price_resolver
         self.updater = updater or SensorUpdater()
         self.ignore_user_ids = ignore_user_ids
@@ -71,10 +74,10 @@ class DailyRangeFetchService:
 
             for user_id in target_user_ids:
                 if user_id in self.ignore_user_ids:
-                    logging.info("The user ID %s will be ignored in daily range fetch.", user_id)
+                    logging.info("The user ID %s will be ignored in daily range fetch.", mask_user_id(user_id))
                     continue
                 if user_id not in discovered_user_ids:
-                    raise RuntimeError(f"user_id {user_id} was not discovered after login")
+                    raise RuntimeError(f"user_id {mask_user_id(user_id)} was not discovered after login")
 
                 userid_index = discovered_user_ids.index(user_id)
                 self.usage_page.open_for_user(
@@ -87,6 +90,8 @@ class DailyRangeFetchService:
                 rows = self.collector.collect(driver, start_date, end_date)
                 persisted_count = self._persist_rows(user_id, rows)
                 self._publish_refresh(user_id)
+                if self.ha_energy_backfiller is not None:
+                    self.ha_energy_backfiller.run(user_id)
                 results[user_id] = {
                     "collected": len(rows),
                     "persisted": persisted_count,
@@ -95,7 +100,7 @@ class DailyRangeFetchService:
                 }
                 logging.info(
                     "Daily range fetch completed for user %s: collected=%s persisted=%s range=%s~%s",
-                    user_id,
+                    mask_user_id(user_id),
                     len(rows),
                     persisted_count,
                     start_date,
@@ -129,6 +134,7 @@ class DailyRangeFetchService:
                 )
                 if total_charge is not None:
                     total_charge = round(total_charge, 2)
+                row["total_charge"] = total_charge
                 self.db.insert_daily_data(
                     {
                         "date": row_date,
@@ -154,9 +160,36 @@ class DailyRangeFetchService:
         return persisted_count
 
     def _publish_refresh(self, user_id: str) -> None:
+        if self.db is None or not self.db.connect_user_db(user_id):
+            return
+        try:
+            latest_daily = self.db.get_latest_daily_row()
+            month_summary = self.db.get_current_month_daily_summary() or self.db.get_latest_daily_month_summary()
+            year_summary = self.db.get_current_year_daily_summary()
+        finally:
+            self.db.close_connect()
+
+        if latest_daily is None:
+            return
+
+        cached = self.updater.get_cached_user_data(user_id)
         postfix = f"_{user_id[-4:]}"
-        self.updater.update_daily_history_data(user_id, postfix)
+        self.updater.update_one_userid(
+            user_id=user_id,
+            balance=cached.get("balance"),
+            last_daily_date=latest_daily["date"],
+            last_daily_usage=latest_daily["usage"],
+            last_daily_charge=latest_daily["charge"],
+            yearly_usage=year_summary["usage"] if year_summary else cached.get("yearly_usage"),
+            yearly_charge=year_summary["charge"] if year_summary else cached.get("yearly_charge"),
+            month_usage=month_summary["usage"] if month_summary else cached.get("month_usage"),
+            month_charge=month_summary["charge"] if month_summary else cached.get("month_charge"),
+            valley_usage=latest_daily["valley_usage"],
+            flat_usage=latest_daily["flat_usage"],
+            peak_usage=latest_daily["peak_usage"],
+            tip_usage=latest_daily["tip_usage"],
+            notify_stale=False,
+        )
         self.updater.update_total_data(user_id, postfix, usage=True)
         self.updater.update_total_data(user_id, postfix, usage=False)
-        if getattr(self.updater, "publish_tou_detail_sensors", False):
-            self.updater.update_period_tou_data(user_id, postfix)
+        self.updater.close()

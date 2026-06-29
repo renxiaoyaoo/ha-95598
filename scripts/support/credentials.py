@@ -55,3 +55,13 @@ def _parse_login_credentials_json(raw_credentials: str) -> list[LoginCredential]
         credentials.append(LoginCredential(account=account, password=password, label=label))
 
     return credentials
+
+
+def mask_user_id(user_id: str) -> str:
+    value = str(user_id or "")
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"***{value[-4:]}"
+
+def mask_user_ids(user_ids) -> list[str]:
+    return [mask_user_id(user_id) for user_id in (user_ids or [])]

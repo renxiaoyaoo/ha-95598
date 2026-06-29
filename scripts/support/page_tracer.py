@@ -99,7 +99,7 @@ class PageTracer:
                       type: el.type || '',
                       class_name: el.className || '',
                       placeholder: el.placeholder || '',
-                      value: el.value || ''
+                      has_value: Boolean(el.value)
                     })),
                   visible_buttons: Array.from(document.querySelectorAll('button, [role=\"button\"]'))
                     .filter(visible)

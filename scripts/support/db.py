@@ -1,4 +1,5 @@
 import logging
+from scripts.support.credentials import mask_user_id
 import os
 import sqlite3
 from datetime import datetime
@@ -34,7 +35,7 @@ class SqliteDB:
             self.connect = sqlite3.connect(self.db_path, timeout=30)
             self._configure_connection()
             self._create_schema()
-            logging.info("SQLite database ready at %s for user %s", self.db_path, self.user_id)
+            logging.info("SQLite database ready at %s for user %s", self.db_path, mask_user_id(self.user_id))
             return True
         except (sqlite3.Error, ValueError) as exc:
             logging.error("Failed to prepare sqlite database: %s", exc)
@@ -251,12 +252,11 @@ class SqliteDB:
         finally:
             cursor.close()
 
-    def get_current_month_daily_summary(self) -> dict[str, Optional[float]] | None:
+    def _get_daily_month_summary(self, month: str) -> dict[str, Optional[float]] | None:
         if self.connect is None or self.user_id is None:
             logging.error("Database connection is not established.")
             return None
 
-        month = datetime.now().strftime("%Y-%m")
         cursor = self.connect.cursor()
         try:
             cursor.execute(
@@ -288,6 +288,62 @@ class SqliteDB:
             }
         finally:
             cursor.close()
+
+    def get_current_month_daily_summary(self) -> dict[str, Optional[float]] | None:
+        return self._get_daily_month_summary(datetime.now().strftime("%Y-%m"))
+
+    def get_latest_daily_row(self) -> dict[str, Optional[float]] | None:
+        if self.connect is None or self.user_id is None:
+            logging.error("Database connection is not established.")
+            return None
+
+        cursor = self.connect.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT date, total_usage, total_charge, valley_usage, flat_usage, peak_usage, tip_usage
+                FROM daily_usage
+                WHERE user_id = ?
+                ORDER BY date DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return {
+                "date": row[0],
+                "usage": self._safe_float(row[1], default=0.0),
+                "charge": self._safe_float(row[2], default=0.0),
+                "valley_usage": self._safe_float(row[3], default=0.0),
+                "flat_usage": self._safe_float(row[4], default=0.0),
+                "peak_usage": self._safe_float(row[5], default=0.0),
+                "tip_usage": self._safe_float(row[6], default=0.0),
+            }
+        finally:
+            cursor.close()
+
+    def get_latest_daily_month_summary(self) -> dict[str, Optional[float]] | None:
+        if self.connect is None or self.user_id is None:
+            logging.error("Database connection is not established.")
+            return None
+
+        cursor = self.connect.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT MAX(substr(date, 1, 7))
+                FROM daily_usage
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            )
+            row = cursor.fetchone()
+            month = row[0] if row else None
+        finally:
+            cursor.close()
+        return self._get_daily_month_summary(month) if month else None
 
     def get_current_year_daily_summary(self) -> dict[str, Optional[float]] | None:
         if self.connect is None or self.user_id is None:

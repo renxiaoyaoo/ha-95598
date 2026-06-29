@@ -22,6 +22,7 @@ from scripts.main import LOCAL_DATA_DIR, logger_init
 from scripts.sensor_updater import SensorUpdater
 from scripts.support.credentials import load_login_credentials
 from scripts.support.error_watcher import ErrorWatcher
+from scripts.support.credentials import mask_user_id
 
 
 OUT_DIR = LOCAL_DATA_DIR / "pages"
@@ -193,7 +194,7 @@ def main() -> None:
             if not user_ids:
                 raise RuntimeError("No user ids found")
             user_id = user_ids[0]
-        logging.info("Probe user_id=%s at %s", user_id, datetime.now().isoformat(timespec="seconds"))
+        logging.info("Probe user_id=%s at %s", mask_user_id(user_id), datetime.now().isoformat(timespec="seconds"))
 
         _drain_performance_logs(driver)
         driver.get(BALANCE_URL)
@@ -203,8 +204,8 @@ def main() -> None:
         _drain_performance_logs(driver)
         if args.skip_user_list:
             driver.get(ELECTRIC_USAGE_URL)
-            fetcher.log_page_state(driver, f"probe_usage_{user_id}")
-            fetcher.step_sleep(driver, f"probe_usage_{user_id}")
+            fetcher.log_page_state(driver, f"probe_usage_{mask_user_id(user_id)}")
+            fetcher.step_sleep(driver, f"probe_usage_{mask_user_id(user_id)}")
         else:
             fetcher.usage_page.open_for_user(driver, user_id, 0, label_prefix="probe_usage")
         _dump_page(fetcher, driver, "usage")

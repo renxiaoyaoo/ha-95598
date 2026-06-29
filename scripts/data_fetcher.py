@@ -20,9 +20,10 @@ from scripts.support.error_watcher import ErrorWatcher
 from typing import Optional
 from scripts.support.page_tracer import PageTracer
 from scripts.support.session_manager import SessionManager
-from scripts.support.credentials import LoginCredential, mask_account
+from scripts.support.credentials import LoginCredential, mask_account, mask_user_id, mask_user_ids
 from scripts.support.login_manager import LoginManager
 from scripts.support.ha95598_navigator import Ha95598Navigator
+from scripts.support.ha_energy_backfiller import HaEnergyStatisticsBackfiller
 
 from scripts.const import BALANCE_URL, ELECTRIC_BILL_SUMMARY_URL
 
@@ -58,6 +59,7 @@ class DataFetcher:
             can_use_session=self._can_use_session,
             log_page_state=self._log_page_state,
             step_sleep=self._step_sleep,
+            driver_wait_time=self.DRIVER_IMPLICITY_WAIT_TIME,
         )
         self.login_manager = LoginManager(
             credentials=self.credentials,
@@ -87,6 +89,7 @@ class DataFetcher:
         )
         self._init_db()
         self.data_persister = DataPersister(self.db, self.tou_price_resolver)
+        self.ha_energy_backfiller = HaEnergyStatisticsBackfiller(self.db.db_path) if self.db is not None else None
 
     def _init_db(self):
         self.db_type = os.getenv("DB_TYPE", "sqlite").lower()
@@ -133,6 +136,40 @@ class DataFetcher:
         current_stage = (progress or {}).get("stage", "none")
         return stage_order.get(current_stage, 0) >= stage_order.get(stage, 0)
 
+    def _known_user_ids_from_local_state(self, updater) -> list[str]:
+        user_ids: list[str] = []
+
+        def add_user_id(value) -> None:
+            value = str(value or "").strip()
+            if value and value not in user_ids:
+                user_ids.append(value)
+
+        try:
+            cache_data = updater.cache_store.load()
+            if isinstance(cache_data, dict):
+                for user_id, entry in cache_data.items():
+                    if isinstance(entry, dict) and entry.get("data"):
+                        add_user_id(user_id)
+        except Exception as exc:
+            logging.debug("Failed to read known user ids from cache: %s", exc)
+
+        try:
+            if self.db is not None and getattr(self.db, "db_path", None) and self.db.db_path.exists():
+                import sqlite3
+
+                with sqlite3.connect(self.db.db_path) as conn:
+                    for table in ("daily_usage", "monthly_usage", "yearly_usage"):
+                        try:
+                            rows = conn.execute(f"SELECT DISTINCT user_id FROM {table}").fetchall()
+                        except Exception:
+                            continue
+                        for row in rows:
+                            add_user_id(row[0])
+        except Exception as exc:
+            logging.debug("Failed to read known user ids from database: %s", exc)
+
+        return user_ids
+
     def _step_sleep(self, driver, label: Optional[str] = None, multiplier: int = 1) -> None:
         step_label = self._resolve_trace_label(label)
         seconds = self.RETRY_WAIT_TIME_OFFSET_UNIT * multiplier
@@ -173,14 +210,20 @@ class DataFetcher:
 
             self._step_sleep(driver, "after_login_success")
             logging.info(f"Try to get the userid list")
-            user_id_list = self.navigator.get_user_ids(driver)
-            logging.info(f"Here are a total of {len(user_id_list)} userids, which are {user_id_list} among which {self.IGNORE_USER_ID} will be ignored.")
+            try:
+                user_id_list = self.navigator.get_user_ids(driver)
+            except Exception as exc:
+                user_id_list = self._known_user_ids_from_local_state(updater)
+                if not user_id_list:
+                    raise
+                logging.warning("Failed to parse user id list from page: %s. Use locally known user ids.", exc)
+            logging.info("Here are a total of %s userids, which are %s among which %s will be ignored.", len(user_id_list), mask_user_ids(user_id_list), mask_user_ids(self.IGNORE_USER_ID))
             self._step_sleep(driver, "after_get_user_ids")
 
             for userid_index, user_id in enumerate(user_id_list):
                 try:
                     if user_id in self.IGNORE_USER_ID:
-                        logging.info(f"The user ID {user_id} will be ignored in user_id_list")
+                        logging.info("The user ID %s will be ignored in user_id_list", mask_user_id(user_id))
                         continue
 
                     progress = updater.get_progress(user_id)
@@ -196,7 +239,7 @@ class DataFetcher:
                         current_userid = self.navigator.ensure_target_userid(driver, userid_index, expected_user_id=user_id)
                         self._step_sleep(driver, f"after_choose_balance_user_{userid_index}")
                         if current_userid in self.IGNORE_USER_ID:
-                            logging.info(f"The user ID {current_userid} will be ignored in user_id_list")
+                            logging.info("The user ID %s will be ignored in user_id_list", mask_user_id(current_userid))
                             continue
                     else:
                         logging.info(
@@ -233,13 +276,15 @@ class DataFetcher:
                         peak_usage=peak_usage,
                         tip_usage=tip_usage,
                     )
+                    if self.ha_energy_backfiller is not None:
+                        self.ha_energy_backfiller.run(user_id)
 
-                    self._step_sleep(driver, f"after_update_user_state_{user_id}")
+                    self._step_sleep(driver, f"after_update_user_state_{mask_user_id(user_id)}")
                 except Exception as e:
                     if userid_index != len(user_id_list) - 1:
-                        logging.info(f"The current user {user_id} data fetching failed {e}, the next user data will be fetched.")
+                        logging.info("The current user %s data fetching failed %s, the next user data will be fetched.", mask_user_id(user_id), e)
                     else:
-                        logging.info(f"The user {user_id} data fetching failed, {e}")
+                        logging.info("The user %s data fetching failed, %s", mask_user_id(user_id), e)
                         logging.info("Webdriver will quit after processing the user list.")
                     continue
         except Exception as e:
@@ -551,14 +596,14 @@ class DataFetcher:
 
         balance = cached.get("balance")
         if self._has_completed_stage(progress, "balance"):
-            logging.info("Skip balance fetch for %s because today's progress already exists.", user_id)
+            logging.info("Skip balance fetch for %s because today's progress already exists.", mask_user_id(user_id))
         else:
             balance = self._get_electric_balance(driver)
             if (balance is None):
-                logging.error(f"Get electricity charge balance for {user_id} failed, Pass.")
+                logging.error(f"Get electricity charge balance for {mask_user_id(user_id)} failed, Pass.")
             else:
                 logging.info(
-                    f"Get electricity charge balance for {user_id} successfully, balance is {balance} CNY.")
+                    f"Get electricity charge balance for {mask_user_id(user_id)} successfully, balance is {balance} CNY.")
                 updater.save_partial_data(user_id, balance=balance)
                 updater.update_progress_stage(user_id, "balance", fetch_date=self._progress_date())
                 progress = updater.get_progress(user_id)
@@ -569,20 +614,20 @@ class DataFetcher:
         yearly_usage = cached.get("yearly_usage")
         yearly_charge = cached.get("yearly_charge")
         if self._has_completed_stage(progress, "yearly"):
-            logging.info("Skip yearly fetch for %s because today's progress already exists.", user_id)
+            logging.info("Skip yearly fetch for %s because today's progress already exists.", mask_user_id(user_id))
         else:
             yearly_usage, yearly_charge = self._get_yearly_data(driver)
 
             if yearly_usage is None:
-                logging.error(f"Get year power usage for {user_id} failed, pass")
+                logging.error(f"Get year power usage for {mask_user_id(user_id)} failed, pass")
             else:
                 logging.info(
-                    f"Get year power usage for {user_id} successfully, usage is {yearly_usage} kwh")
+                    f"Get year power usage for {mask_user_id(user_id)} successfully, usage is {yearly_usage} kwh")
             if yearly_charge is None:
-                logging.error(f"Get year power charge for {user_id} failed, pass")
+                logging.error(f"Get year power charge for {mask_user_id(user_id)} failed, pass")
             else:
                 logging.info(
-                    f"Get year power charge for {user_id} successfully, yealrly charge is {yearly_charge} CNY")
+                    f"Get year power charge for {mask_user_id(user_id)} successfully, yealrly charge is {yearly_charge} CNY")
             updater.save_partial_data(user_id, yearly_usage=yearly_usage, yearly_charge=yearly_charge)
             updater.update_progress_stage(user_id, "yearly", fetch_date=self._progress_date())
             progress = updater.get_progress(user_id)
@@ -592,7 +637,7 @@ class DataFetcher:
         month_usage = None
         month_charge = None
         if self._has_completed_stage(progress, "monthly"):
-            logging.info("Skip monthly fetch for %s because today's progress already exists.", user_id)
+            logging.info("Skip monthly fetch for %s because today's progress already exists.", mask_user_id(user_id))
             if cached.get("month_usage") is not None:
                 month_usage = [cached.get("month_usage")]
             if cached.get("month_charge") is not None:
@@ -600,10 +645,10 @@ class DataFetcher:
         else:
             month, month_usage, month_charge = self._get_month_usage(driver)
             if month is None:
-                logging.error(f"Get month power usage for {user_id} failed, pass")
+                logging.error(f"Get month power usage for {mask_user_id(user_id)} failed, pass")
             else:
                 for m in range(len(month)):
-                    logging.info(f"Get month power charge for {user_id} successfully, {month[m]} usage is {month_usage[m]} KWh, charge is {month_charge[m]} CNY.")
+                    logging.info(f"Get month power charge for {mask_user_id(user_id)} successfully, {month[m]} usage is {month_usage[m]} KWh, charge is {month_charge[m]} CNY.")
                 updater.save_partial_data(
                     user_id,
                     month_usage=month_usage[-1] if month_usage else None,
@@ -615,14 +660,14 @@ class DataFetcher:
         last_daily_date = cached.get("last_daily_date")
         last_daily_usage = cached.get("last_daily_usage")
         if self._has_completed_stage(progress, "daily"):
-            logging.info("Skip daily fetch for %s because today's progress already exists.", user_id)
+            logging.info("Skip daily fetch for %s because today's progress already exists.", mask_user_id(user_id))
         else:
             last_daily_date, last_daily_usage = self._get_yesterday_usage(driver)
             if last_daily_usage is None:
-                logging.error(f"Get daily power consumption for {user_id} failed, pass")
+                logging.error(f"Get daily power consumption for {mask_user_id(user_id)} failed, pass")
             else:
                 logging.info(
-                    f"Get daily power consumption for {user_id} successfully, , {last_daily_date} usage is {last_daily_usage} kwh.")
+                    f"Get daily power consumption for {mask_user_id(user_id)} successfully, , {last_daily_date} usage is {last_daily_usage} kwh.")
                 updater.save_partial_data(
                     user_id,
                     last_daily_date=last_daily_date,
@@ -636,7 +681,7 @@ class DataFetcher:
         tip_usage = cached.get("tip_usage")
         daily_tou_map = {}
         if self._has_completed_stage(progress, "tou"):
-            logging.info("Skip TOU fetch for %s because today's progress already exists.", user_id)
+            logging.info("Skip TOU fetch for %s because today's progress already exists.", mask_user_id(user_id))
         else:
             daily_tou_map = self._get_recent_daily_usage_breakdown_map(driver, limit_days=7)
             latest_tou = daily_tou_map.get(last_daily_date) if last_daily_date else None
@@ -657,7 +702,7 @@ class DataFetcher:
 
             if daily_tou_map or any(value is not None for value in (valley_usage, flat_usage, peak_usage, tip_usage)):
                 logging.info(
-                    f"Get recent time-of-use power usage for {user_id} successfully, latest valley={valley_usage} KWh, flat={flat_usage} KWh, peak={peak_usage} KWh, tip={tip_usage} KWh, days={len(daily_tou_map)}."
+                    f"Get recent time-of-use power usage for {mask_user_id(user_id)} successfully, latest valley={valley_usage} KWh, flat={flat_usage} KWh, peak={peak_usage} KWh, tip={tip_usage} KWh, days={len(daily_tou_map)}."
                 )
                 updater.save_partial_data(
                     user_id,
@@ -669,7 +714,7 @@ class DataFetcher:
                 updater.update_progress_stage(user_id, "tou", fetch_date=self._progress_date())
                 progress = updater.get_progress(user_id)
             else:
-                logging.error(f"Get latest time-of-use power usage for {user_id} failed, pass")
+                logging.error(f"Get latest time-of-use power usage for {mask_user_id(user_id)} failed, pass")
 
         last_daily_charge = None
 
@@ -705,16 +750,16 @@ class DataFetcher:
 
         if self.db is not None:
             if self._has_completed_stage(progress, "billing"):
-                logging.info("Skip monthly billing TOU fetch for %s because today's progress already exists.", user_id)
+                logging.info("Skip monthly billing TOU fetch for %s because today's progress already exists.", mask_user_id(user_id))
             else:
                 bill_rows, bill_verified = self._sync_monthly_bill_tou(driver, user_id)
                 if bill_rows:
                     months = ", ".join(row["month"] for row in bill_rows)
-                    logging.info("Synced monthly bill TOU for %s: %s", user_id, months)
+                    logging.info("Synced monthly bill TOU for %s: %s", mask_user_id(user_id), months)
                 elif bill_verified:
-                    logging.info("Monthly bill TOU check completed for %s with no new data.", user_id)
+                    logging.info("Monthly bill TOU check completed for %s with no new data.", mask_user_id(user_id))
                 else:
-                    logging.warning("Monthly bill TOU check did not complete for %s", user_id)
+                    logging.warning("Monthly bill TOU check did not complete for %s", mask_user_id(user_id))
                 if bill_verified:
                     updater.update_progress_stage(user_id, "billing", fetch_date=self._progress_date())
                     progress = updater.get_progress(user_id)

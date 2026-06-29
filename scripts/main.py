@@ -25,6 +25,7 @@ class RuntimeConfig:
     version: str | None
     retry_times_limit: int
     republish_interval_minutes: int
+    fetch_on_startup: bool
 
 
 def load_runtime_config() -> RuntimeConfig:
@@ -36,6 +37,7 @@ def load_runtime_config() -> RuntimeConfig:
         version=os.getenv("VERSION"),
         retry_times_limit=int(os.getenv("RETRY_TIMES_LIMIT", 5)),
         republish_interval_minutes=int(os.getenv("REPUBLISH_INTERVAL_MINUTES", 60)),
+        fetch_on_startup=os.getenv("FETCH_ON_STARTUP", "false").lower() == "true",
     )
 def main():
     if "PYTHON_IN_DOCKER" not in os.environ:
@@ -69,7 +71,9 @@ def main():
     schedule_jobs(fetcher, updater, config.job_start_time, config.job_times, config.retry_times_limit, config.republish_interval_minutes)
 
     republished = updater.republish()
-    if republished and updater.should_skip_startup_fetch():
+    if not config.fetch_on_startup:
+        logging.info("Startup fetch is disabled; waiting for the scheduled run.")
+    elif republished and updater.should_skip_startup_fetch():
         logging.info("Data restored from complete cache, skipping startup fetch to protect account.")
     else:
         logging.info("Cache is missing, stale, or incomplete. Fetching data from State Grid...")

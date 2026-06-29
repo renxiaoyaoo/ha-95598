@@ -279,21 +279,6 @@ class PointClickImageSolver:
                 return []
             top_matches.append(sorted(scores, key=lambda item: item[0], reverse=True)[:10])
 
-        for index, matches in enumerate(top_matches):
-            if len(matches) < 2:
-                continue
-            best_score = matches[0][0]
-            second_score = matches[1][0]
-            if best_score - second_score < 0.03 and best_score < 0.80:
-                logging.info(
-                    "Rejected mixed OCR target %s: ambiguous scores best=%.3f second=%.3f gap=%.3f",
-                    index,
-                    best_score,
-                    second_score,
-                    best_score - second_score,
-                )
-                return []
-
         ranked = []
 
         def search(index: int, used: set, score_sum: float, chosen: list):
@@ -314,6 +299,24 @@ class PointClickImageSolver:
         if not ranked:
             return []
         ranked.sort(key=lambda item: item[0], reverse=True)
+        if len(ranked) > 1:
+            best_average = ranked[0][0] / len(top_matches)
+            second_average = ranked[1][0] / len(top_matches)
+            if best_average - second_average < min_score_gap:
+                diagnostics["rejection_reason"] = "ambiguous_solution"
+                diagnostics["ambiguous_solution"] = {
+                    "best_average_score": round(float(best_average), 6),
+                    "second_average_score": round(float(second_average), 6),
+                    "gap": round(float(best_average - second_average), 6),
+                }
+                self.last_diagnostics = diagnostics
+                logging.info(
+                    "Rejected point-click solution: global score gap %.3f below threshold %.3f",
+                    best_average - second_average,
+                    min_score_gap,
+                )
+                return []
+
         solutions = []
         for score_sum, chosen in ranked[:3]:
             average_score = score_sum / len(chosen)
@@ -700,30 +703,6 @@ class PointClickImageSolver:
                 }
             )
 
-        for index, matches in enumerate(top_matches):
-            if len(matches) < 2:
-                continue
-            best_score = matches[0][0]
-            second_score = matches[1][0]
-            if best_score - second_score < min_score_gap:
-                diagnostics["rejection_reason"] = "ambiguous_target"
-                diagnostics["ambiguous_target"] = {
-                    "index": index,
-                    "best_score": round(float(best_score), 6),
-                    "second_score": round(float(second_score), 6),
-                    "gap": round(float(best_score - second_score), 6),
-                }
-                self.last_diagnostics = diagnostics
-                logging.info(
-                    "Rejected point-click target %s: ambiguous scores best=%.3f second=%.3f gap=%.3f below threshold %.3f",
-                    index,
-                    best_score,
-                    second_score,
-                    best_score - second_score,
-                    min_score_gap,
-                )
-                return []
-
         ranked = []
 
         def search(index: int, used: set, score_sum: float, chosen: list):
@@ -747,6 +726,24 @@ class PointClickImageSolver:
             return []
 
         ranked.sort(key=lambda item: item[0], reverse=True)
+        if len(ranked) > 1:
+            best_average = ranked[0][0] / len(top_matches)
+            second_average = ranked[1][0] / len(top_matches)
+            if best_average - second_average < min_score_gap:
+                diagnostics["rejection_reason"] = "ambiguous_solution"
+                diagnostics["ambiguous_solution"] = {
+                    "best_average_score": round(float(best_average), 6),
+                    "second_average_score": round(float(second_average), 6),
+                    "gap": round(float(best_average - second_average), 6),
+                }
+                self.last_diagnostics = diagnostics
+                logging.info(
+                    "Rejected point-click solution: global score gap %.3f below threshold %.3f",
+                    best_average - second_average,
+                    min_score_gap,
+                )
+                return []
+
         solutions = []
         rejected_solutions = []
         for score_sum, chosen in ranked[:limit]:
