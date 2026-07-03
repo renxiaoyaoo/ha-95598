@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.support.credentials import load_login_credentials, mask_account
+from scripts.support.credentials import load_login_credentials, mask_account, mask_user_id, mask_user_ids
 
 
 def test_load_single_login_credential(monkeypatch):
@@ -41,3 +41,8 @@ def test_login_credentials_json_requires_valid_json(monkeypatch):
 
 def test_mask_short_account():
     assert mask_account("abc") == "***"
+
+
+def test_mask_user_id_keeps_only_suffix():
+    assert mask_user_id("fake-user-a") == "***er-a"
+    assert mask_user_ids(["fake-user-a", "fake-user-b"]) == ["***er-a", "***er-b"]

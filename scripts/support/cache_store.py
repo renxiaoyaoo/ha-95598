@@ -101,7 +101,7 @@ class CacheStore:
             if progress.get("fetch_date") != today:
                 logging.info(
                     "Startup fetch cannot be skipped because cache entry for %s is stale: fetch_date=%s today=%s",
-                    user_id,
+                    mask_user_id(user_id),
                     progress.get("fetch_date"),
                     today,
                 )
@@ -110,7 +110,7 @@ class CacheStore:
             if not self.is_progress_complete(progress):
                 logging.info(
                     "Startup fetch cannot be skipped because cache entry for %s is incomplete: progress=%s",
-                    user_id,
+                    mask_user_id(user_id),
                     progress,
                 )
                 return False

@@ -28,6 +28,7 @@ YEARLY_VALLEY_USAGE_SENSOR_NAME = "sensor.yearly_valley_electricity_usage"
 YEARLY_FLAT_USAGE_SENSOR_NAME = "sensor.yearly_flat_electricity_usage"
 YEARLY_PEAK_USAGE_SENSOR_NAME = "sensor.yearly_peak_electricity_usage"
 YEARLY_TIP_USAGE_SENSOR_NAME = "sensor.yearly_tip_electricity_usage"
+FETCH_STATUS_SENSOR_NAME = "sensor.ha_95598_fetch_status"
 
 BALANCE_UNIT = "CNY"
 USAGE_UNIT = "kWh"
@@ -55,4 +56,5 @@ SENSOR_FRIENDLY_LABELS = {
     YEARLY_FLAT_USAGE_SENSOR_NAME: "本年电量-平",
     YEARLY_PEAK_USAGE_SENSOR_NAME: "本年电量-峰",
     YEARLY_TIP_USAGE_SENSOR_NAME: "本年电量-尖",
+    FETCH_STATUS_SENSOR_NAME: "同步状态",
 }

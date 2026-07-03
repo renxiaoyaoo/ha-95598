@@ -310,7 +310,7 @@ class PointClickImageSolver:
                     "gap": round(float(best_average - second_average), 6),
                 }
                 self.last_diagnostics = diagnostics
-                logging.info(
+                logging.debug(
                     "Rejected point-click solution: global score gap %.3f below threshold %.3f",
                     best_average - second_average,
                     min_score_gap,
@@ -651,7 +651,7 @@ class PointClickImageSolver:
             "accepted": False,
             "rejection_reason": None,
         }
-        logging.info(
+        logging.debug(
             "Point-click solver image stats: targets=%s candidates=%s",
             len(target_boxes),
             len(candidates),
@@ -737,7 +737,7 @@ class PointClickImageSolver:
                     "gap": round(float(best_average - second_average), 6),
                 }
                 self.last_diagnostics = diagnostics
-                logging.info(
+                logging.debug(
                     "Rejected point-click solution: global score gap %.3f below threshold %.3f",
                     best_average - second_average,
                     min_score_gap,
@@ -757,7 +757,7 @@ class PointClickImageSolver:
                         "min_point_score": round(float(min_score), 6),
                     }
                 )
-                logging.info(
+                logging.debug(
                     "Rejected point-click solution: average_score=%.3f below threshold %.3f, min_point_score=%.3f",
                     average_score,
                     min_average_score,
@@ -772,7 +772,7 @@ class PointClickImageSolver:
                         "min_point_score": round(float(min_score), 6),
                     }
                 )
-                logging.info(
+                logging.debug(
                     "Rejected point-click solution: min_point_score=%.3f below threshold %.3f, average_score=%.3f",
                     min_score,
                     min_point_score,

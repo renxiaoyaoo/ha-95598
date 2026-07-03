@@ -221,11 +221,19 @@ class DataFetcher:
             self._step_sleep(driver, "after_get_user_ids")
 
             for userid_index, user_id in enumerate(user_id_list):
+                postfix = f"_{user_id[-4:]}"
                 try:
                     if user_id in self.IGNORE_USER_ID:
                         logging.info("The user ID %s will be ignored in user_id_list", mask_user_id(user_id))
                         continue
 
+                    updater.update_fetch_status(
+                        user_id,
+                        postfix,
+                        "running",
+                        last_attempt_at=datetime.now().isoformat(timespec="seconds"),
+                        stage="start",
+                    )
                     progress = updater.get_progress(user_id)
                     should_open_balance_page = not (
                         self._is_progress_current(progress)
@@ -281,6 +289,17 @@ class DataFetcher:
 
                     self._step_sleep(driver, f"after_update_user_state_{mask_user_id(user_id)}")
                 except Exception as e:
+                    cached = updater.get_cached_user_data(user_id)
+                    updater.update_fetch_status(
+                        user_id,
+                        postfix,
+                        "failed",
+                        latest_daily_date=cached.get("last_daily_date"),
+                        last_success_at=cached.get("last_fetch_success_at"),
+                        last_attempt_at=datetime.now().isoformat(timespec="seconds"),
+                        stage=(updater.get_progress(user_id) or {}).get("stage"),
+                        error_type=type(e).__name__,
+                    )
                     if userid_index != len(user_id_list) - 1:
                         logging.info("The current user %s data fetching failed %s, the next user data will be fetched.", mask_user_id(user_id), e)
                     else:

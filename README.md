@@ -272,6 +272,8 @@ python3.12 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 ```
 
+不建议用 Python `3.13` 安装完整开发依赖；部分固定依赖版本可能没有兼容 wheel。
+
 代码检查：
 
 ```bash
@@ -287,8 +289,18 @@ python3 scripts/tools/privacy_check.py --staged
 单元测试：
 
 ```bash
-.venv/bin/pytest -q
+.venv/bin/python -m pytest -q
 ```
+
+测试只收集 `tests/`，运行态 `data/` 目录不会被 pytest 扫描。
+
+校验当前启用的本地电价配置：
+
+```bash
+python3 scripts/tools/check_local_tariff.py
+```
+
+这个命令只输出配置文件名、版本名、月份覆盖和阶梯阈值摘要，不输出 `.env` 内容。私人电价建议放在被 `.gitignore` 忽略的 `config/tou_price_config.local.json`，并通过 `TOU_PRICE_CONFIG` 指向它。
 
 离线回放点选验证码样本：
 

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ from scripts.const import (
     DAILY_CHARGE_SENSOR_NAME,
     DAILY_HISTORY_SENSOR_NAME,
     DAILY_USAGE_SENSOR_NAME,
+    FETCH_STATUS_SENSOR_NAME,
     FLAT_USAGE_SENSOR_NAME,
     MONTH_CHARGE_SENSOR_NAME,
     MONTH_FLAT_USAGE_SENSOR_NAME,
@@ -78,6 +80,29 @@ class SensorUpdater:
         return SENSOR_FRIENDLY_LABELS.get(
             f"sensor.{sensor_name_base}",
             sensor_name_base.replace("_", " "),
+        )
+
+    @staticmethod
+    def _public_sensor_name(sensor_name: str) -> str:
+        return re.sub(r"_\d{4}$", "", sensor_name)
+
+    def _log_sensor_update(self, sensor_name: str, state, unit: str = "", **attributes) -> None:
+        details = ", ".join(f"{key}={value}" for key, value in attributes.items() if value is not None)
+        if details:
+            logging.info(
+                "Homeassistant sensor %s state updated: %s%s (%s)",
+                self._public_sensor_name(sensor_name),
+                state,
+                f" {unit}" if unit else "",
+                details,
+            )
+            return
+
+        logging.info(
+            "Homeassistant sensor %s state updated: %s%s",
+            self._public_sensor_name(sensor_name),
+            state,
+            f" {unit}" if unit else "",
         )
 
     def _mqtt_enabled(self) -> bool:
@@ -268,6 +293,14 @@ class SensorUpdater:
         if self.publish_tou_detail_sensors:
             self.update_tou_data(user_id, postfix, last_daily_date, valley_usage, flat_usage, peak_usage, tip_usage)
             self.update_period_tou_data(user_id, postfix)
+        self.update_fetch_status(
+            user_id,
+            postfix,
+            "ok",
+            latest_daily_date=last_daily_date,
+            last_success_at=datetime.now().isoformat(timespec="seconds"),
+            stage="complete",
+        )
 
         if log_success:
             logging.info("User %s state-refresh task run successfully!", mask_user_id(user_id))
@@ -436,7 +469,7 @@ class SensorUpdater:
             state_class="",
             extra_attributes=extra_attributes,
         )
-        logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} kWh, last_daily_date{last_daily_date}")
+        self._log_sensor_update(sensorName, sensorState, "kWh", last_daily_date=last_daily_date)
 
     def update_last_daily_charge(self, user_id: str, postfix: str, last_daily_date: str, sensorState: float):
         sensorName = DAILY_CHARGE_SENSOR_NAME + postfix
@@ -453,7 +486,7 @@ class SensorUpdater:
             state_class="",
             extra_attributes=extra_attributes,
         )
-        logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} CNY, last_daily_date{last_daily_date}")
+        self._log_sensor_update(sensorName, sensorState, "CNY", last_daily_date=last_daily_date)
 
     def update_tou_data(
         self,
@@ -493,7 +526,7 @@ class SensorUpdater:
                 "last_reset": datetime.strptime(last_daily_date, "%Y-%m-%d").strftime("%Y-%m-%dT00:00:00+00:00"),
             },
         )
-        logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} kWh")
+        self._log_sensor_update(sensorName, sensorState, "kWh")
 
     def _get_current_month_daily_summary(self, user_id: str):
         db = self._ensure_db(user_id)
@@ -536,7 +569,7 @@ class SensorUpdater:
             state_class="total",
             extra_attributes={"period": period_value},
         )
-        logging.info("Homeassistant sensor %s state updated: %s kWh (period=%s)", sensor_name, sensor_state, period_value)
+        self._log_sensor_update(sensor_name, sensor_state, "kWh", period=period_value)
 
     def update_period_tou_data(self, user_id: str, postfix: str):
         current_month_summary = (
@@ -584,7 +617,7 @@ class SensorUpdater:
             state_class="total",
             extra_attributes={"last_reset": last_reset},
         )
-        logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} CNY")
+        self._log_sensor_update(sensorName, sensorState, "CNY")
 
     def update_month_data(self, user_id: str, postfix: str, sensorState: float, usage=False):
         sensorName = (
@@ -616,7 +649,7 @@ class SensorUpdater:
                 user_id,
                 **({"month_usage": sensorState} if usage else {"month_charge": sensorState}),
             )
-        logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} {'kWh' if usage else 'CNY'} (period={period})")
+        self._log_sensor_update(sensorName, sensorState, "kWh" if usage else "CNY", period=period)
 
     def update_yearly_data(self, user_id: str, postfix: str, sensorState: float, usage=False):
         sensorName = (
@@ -639,7 +672,7 @@ class SensorUpdater:
             state_class="total",
             extra_attributes={"last_reset": last_reset},
         )
-        logging.info(f"Homeassistant sensor {sensorName} state updated: {sensorState} {'kWh' if usage else 'CNY'}")
+        self._log_sensor_update(sensorName, sensorState, "kWh" if usage else "CNY")
 
     def update_total_data(self, user_id: str, postfix: str, usage=False):
         summary = self._get_total_monthly_summary(user_id)
@@ -661,12 +694,7 @@ class SensorUpdater:
             device_class="energy" if usage else "monetary",
             state_class="total",
         )
-        logging.info(
-            "Homeassistant sensor %s state updated: %s %s",
-            sensor_name,
-            sensor_state,
-            "kWh" if usage else "CNY",
-        )
+        self._log_sensor_update(sensor_name, sensor_state, "kWh" if usage else "CNY")
 
     def update_daily_history_data(self, user_id: str, postfix: str):
         history = self._get_recent_daily_history(user_id)
@@ -688,10 +716,67 @@ class SensorUpdater:
                 "series": history["series"],
             },
         )
-        logging.info(
-            "Homeassistant sensor %s state updated: %s kWh (latest_date=%s, series_days=%s)",
+        self._log_sensor_update(
             sensor_name,
             history["state"],
-            history["latest_date"],
-            history["series_days"],
+            "kWh",
+            latest_date=history["latest_date"],
+            series_days=history["series_days"],
+        )
+
+    def update_fetch_status(
+        self,
+        user_id: str,
+        postfix: str,
+        status: str,
+        *,
+        latest_daily_date: str | None = None,
+        last_success_at: str | None = None,
+        last_attempt_at: str | None = None,
+        stage: str | None = None,
+        error_type: str | None = None,
+    ):
+        sensor_name = FETCH_STATUS_SENSOR_NAME + postfix
+        now = datetime.now()
+        source_delay_days = None
+        if latest_daily_date:
+            try:
+                source_delay_days = (now.date() - datetime.strptime(latest_daily_date, "%Y-%m-%d").date()).days
+            except Exception:
+                source_delay_days = None
+
+        last_attempt_at = last_attempt_at or now.isoformat(timespec="seconds")
+        attributes = {
+            "latest_daily_date": latest_daily_date,
+            "source_delay_days": source_delay_days,
+            "last_success_at": last_success_at,
+            "last_attempt_at": last_attempt_at,
+            "stage": stage,
+            "error_type": error_type,
+        }
+        self.save_partial_data(
+            user_id,
+            fetch_status=status,
+            source_delay_days=source_delay_days,
+            last_fetch_success_at=last_success_at,
+            last_fetch_attempt_at=last_attempt_at,
+            last_fetch_error_type=error_type,
+        )
+        self._publish_sensor_state(
+            sensor_name,
+            user_id,
+            status,
+            unit="",
+            icon="mdi:sync",
+            device_class="",
+            state_class="",
+            extra_attributes=attributes,
+        )
+        self._log_sensor_update(
+            sensor_name,
+            status,
+            latest_daily_date=latest_daily_date,
+            source_delay_days=source_delay_days,
+            stage=stage,
+            error_type=error_type,
         )
