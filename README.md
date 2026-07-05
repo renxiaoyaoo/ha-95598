@@ -240,6 +240,12 @@ docker compose run --rm ha-95598 python3 -m scripts.fetch_daily_range --start 20
 
 这个命令会复用同一套登录流程，抓取指定日期范围内的日用电量和谷、平、峰、尖分时数据，计算日电费后写入 SQLite，并刷新 Home Assistant 的日历史和汇总实体。它和日常定时同步是并列入口，不会改写当天同步进度。
 
+## 手工录入水/燃气
+
+水表和燃气表如果只能人工抄表，可以使用 [examples/home-utilities](examples/home-utilities/) 里的 Home Assistant package。
+
+它提供输入框录入累计表读数和单价，由 Home Assistant 的 `utility_meter` 统计每月用量，并自动计算本月费用。
+
 ## 更新
 
 使用已发布镜像：
