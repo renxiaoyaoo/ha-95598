@@ -53,6 +53,7 @@ Thumbs.db
 
 # Project-local scratch files
 scripts/debug_fetch.py
+*.bak-*
 config/tou_price_config.local.json
 
 # Runtime data

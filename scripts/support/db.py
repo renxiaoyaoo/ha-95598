@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from scripts.const import DAILY_HISTORY_PUBLISH_DAYS
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 LOCAL_DATA_DIR = ROOT_DIR / "data"
@@ -411,7 +413,7 @@ class SqliteDB:
         finally:
             cursor.close()
 
-    def get_recent_daily_history(self, days: int = 90) -> dict[str, Any] | None:
+    def get_recent_daily_history(self, days: int = DAILY_HISTORY_PUBLISH_DAYS) -> dict[str, Any] | None:
         if self.connect is None or self.user_id is None:
             logging.error("Database connection is not established.")
             return None

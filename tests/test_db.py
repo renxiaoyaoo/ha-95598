@@ -1,7 +1,8 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from scripts.const import DAILY_HISTORY_PUBLISH_DAYS
 from scripts.support.db import SqliteDB
 
 
@@ -198,5 +199,36 @@ def test_sqlite_summary_helpers(tmp_path) -> None:
         assert history is not None
         assert history["latest_date"] == today
         assert history["series_days"] == 1
+    finally:
+        os.environ.pop("DB_NAME", None)
+
+
+def test_recent_daily_history_default_keeps_180_days(tmp_path) -> None:
+    db_path = tmp_path / "history_window.db"
+    os.environ["DB_NAME"] = str(db_path)
+    db = SqliteDB()
+    start_date = datetime(2026, 1, 1)
+    try:
+        assert db.connect_user_db("test_user") is True
+        for offset in range(DAILY_HISTORY_PUBLISH_DAYS + 5):
+            day = start_date + timedelta(days=offset)
+            assert db.insert_daily_data(
+                {
+                    "date": day.strftime("%Y-%m-%d"),
+                    "total_usage": float(offset + 1),
+                    "total_charge": float(offset + 1) / 2,
+                    "valley_usage": 0.0,
+                    "flat_usage": 0.0,
+                    "peak_usage": 0.0,
+                    "tip_usage": 0.0,
+                }
+            ) is True
+
+        history = db.get_recent_daily_history()
+
+        assert history is not None
+        assert history["series_days"] == DAILY_HISTORY_PUBLISH_DAYS
+        assert history["series"][0]["date"] == "2026-01-06"
+        assert history["latest_date"] == "2026-07-04"
     finally:
         os.environ.pop("DB_NAME", None)

@@ -17,6 +17,7 @@ from scripts.const import (
     BALANCE_UNIT,
     DAILY_CHARGE_SENSOR_NAME,
     DAILY_HISTORY_SENSOR_NAME,
+    DAILY_HISTORY_PUBLISH_DAYS,
     DAILY_USAGE_SENSOR_NAME,
     FETCH_STATUS_SENSOR_NAME,
     FLAT_USAGE_SENSOR_NAME,
@@ -552,7 +553,7 @@ class SensorUpdater:
             return None
         return db.get_total_monthly_summary()
 
-    def _get_recent_daily_history(self, user_id: str, days: int = 90):
+    def _get_recent_daily_history(self, user_id: str, days: int = DAILY_HISTORY_PUBLISH_DAYS):
         db = self._ensure_db(user_id)
         if db is None:
             return None

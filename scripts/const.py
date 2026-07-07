@@ -12,6 +12,7 @@ DAILY_CHARGE_SENSOR_NAME = "sensor.last_electricity_charge"
 TOTAL_USAGE_SENSOR_NAME = "sensor.total_electricity_usage"
 TOTAL_CHARGE_SENSOR_NAME = "sensor.total_electricity_charge"
 DAILY_HISTORY_SENSOR_NAME = "sensor.daily_electricity_history"
+DAILY_HISTORY_PUBLISH_DAYS = 180
 YEARLY_USAGE_SENSOR_NAME = "sensor.yearly_electricity_usage"
 YEARLY_CHARGE_SENSOR_NAME = "sensor.yearly_electricity_charge"
 MONTH_USAGE_SENSOR_NAME = "sensor.month_electricity_usage"
