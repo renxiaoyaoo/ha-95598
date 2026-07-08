@@ -2,7 +2,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 
-from scripts.const import DAILY_HISTORY_PUBLISH_DAYS
+from scripts.const import DAILY_HISTORY_PUBLISH_DAYS, MONTHLY_HISTORY_PUBLISH_MONTHS
 from scripts.support.db import SqliteDB
 
 
@@ -203,7 +203,7 @@ def test_sqlite_summary_helpers(tmp_path) -> None:
         os.environ.pop("DB_NAME", None)
 
 
-def test_recent_daily_history_default_keeps_180_days(tmp_path) -> None:
+def test_recent_daily_history_default_keeps_180_days_with_usage_and_charge_only(tmp_path) -> None:
     db_path = tmp_path / "history_window.db"
     os.environ["DB_NAME"] = str(db_path)
     db = SqliteDB()
@@ -230,5 +230,42 @@ def test_recent_daily_history_default_keeps_180_days(tmp_path) -> None:
         assert history["series_days"] == DAILY_HISTORY_PUBLISH_DAYS
         assert history["series"][0]["date"] == "2026-01-06"
         assert history["latest_date"] == "2026-07-04"
+        assert set(history["series"][0]) == {"date", "usage", "charge"}
+    finally:
+        os.environ.pop("DB_NAME", None)
+
+
+def test_recent_monthly_history_default_keeps_12_months(tmp_path) -> None:
+    db_path = tmp_path / "monthly_history_window.db"
+    os.environ["DB_NAME"] = str(db_path)
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user") is True
+        year = 2025
+        month = 1
+        for offset in range(MONTHLY_HISTORY_PUBLISH_MONTHS + 2):
+            period = f"{year:04d}-{month:02d}"
+            assert db.insert_monthly_data(
+                {
+                    "month": period,
+                    "total_usage": float(offset + 10),
+                    "total_charge": float(offset + 10) / 2,
+                    "valley_usage": 1.0,
+                    "flat_usage": 2.0,
+                    "peak_usage": 3.0,
+                    "tip_usage": 0.0,
+                }
+            ) is True
+            month += 1
+            if month == 13:
+                month = 1
+                year += 1
+
+        history = db.get_recent_monthly_history()
+
+        assert len(history) == MONTHLY_HISTORY_PUBLISH_MONTHS
+        assert history[0]["month"] == "2025-03"
+        assert history[-1]["month"] == "2026-02"
+        assert history[-1]["charge"] == 11.5
     finally:
         os.environ.pop("DB_NAME", None)

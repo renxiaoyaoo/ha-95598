@@ -22,6 +22,8 @@ from scripts.const import (
     FETCH_STATUS_SENSOR_NAME,
     FLAT_USAGE_SENSOR_NAME,
     MONTH_CHARGE_SENSOR_NAME,
+    MONTHLY_HISTORY_SENSOR_NAME,
+    MONTHLY_HISTORY_PUBLISH_MONTHS,
     MONTH_FLAT_USAGE_SENSOR_NAME,
     MONTH_PEAK_USAGE_SENSOR_NAME,
     MONTH_TIP_USAGE_SENSOR_NAME,
@@ -283,6 +285,7 @@ class SensorUpdater:
         self.update_total_data(user_id, postfix, usage=True)
         self.update_total_data(user_id, postfix, usage=False)
         self.update_daily_history_data(user_id, postfix)
+        self.update_monthly_history_data(user_id, postfix)
         if yearly_usage is not None:
             self.update_yearly_data(user_id, postfix, yearly_usage, usage=True)
         if yearly_charge is not None:
@@ -401,7 +404,21 @@ class SensorUpdater:
                     logging.warning("Skip invalid cache entry for user %s: %r", mask_user_id(user_id), values)
                     continue
                 user_data = values.get("data", {})
-                clean_values = {k: v for k, v in user_data.items() if k != 'timestamp'}
+                allowed_keys = {
+                    "balance",
+                    "last_daily_date",
+                    "last_daily_usage",
+                    "last_daily_charge",
+                    "yearly_charge",
+                    "yearly_usage",
+                    "month_charge",
+                    "month_usage",
+                    "valley_usage",
+                    "flat_usage",
+                    "peak_usage",
+                    "tip_usage",
+                }
+                clean_values = {k: v for k, v in user_data.items() if k in allowed_keys}
                 if not clean_values:
                     continue
                 self.update_one_userid(user_id, notify_stale=False, log_success=False, **clean_values)
@@ -558,6 +575,12 @@ class SensorUpdater:
         if db is None:
             return None
         return db.get_recent_daily_history(days=days)
+
+    def _get_recent_monthly_history(self, user_id: str, months: int = MONTHLY_HISTORY_PUBLISH_MONTHS):
+        db = self._ensure_db(user_id)
+        if db is None:
+            return []
+        return db.get_recent_monthly_history(months=months)
 
     def _update_period_segment_usage(self, user_id: str, sensor_name: str, icon: str, period_value: str, sensor_state: float):
         self._publish_sensor_state(
@@ -723,6 +746,35 @@ class SensorUpdater:
             "kWh",
             latest_date=history["latest_date"],
             series_days=history["series_days"],
+        )
+
+    def update_monthly_history_data(self, user_id: str, postfix: str):
+        series = self._get_recent_monthly_history(user_id)
+        if not series:
+            return
+
+        latest = series[-1]
+        sensor_name = MONTHLY_HISTORY_SENSOR_NAME + postfix
+        self._publish_sensor_state(
+            sensor_name,
+            user_id,
+            latest["usage"],
+            unit="kWh",
+            icon="mdi:chart-bar",
+            device_class="",
+            state_class="measurement",
+            extra_attributes={
+                "latest_month": latest["month"],
+                "series_months": len(series),
+                "series": series,
+            },
+        )
+        self._log_sensor_update(
+            sensor_name,
+            latest["usage"],
+            "kWh",
+            latest_month=latest["month"],
+            series_months=len(series),
         )
 
     def update_fetch_status(

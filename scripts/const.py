@@ -12,7 +12,9 @@ DAILY_CHARGE_SENSOR_NAME = "sensor.last_electricity_charge"
 TOTAL_USAGE_SENSOR_NAME = "sensor.total_electricity_usage"
 TOTAL_CHARGE_SENSOR_NAME = "sensor.total_electricity_charge"
 DAILY_HISTORY_SENSOR_NAME = "sensor.daily_electricity_history"
+MONTHLY_HISTORY_SENSOR_NAME = "sensor.monthly_electricity_history"
 DAILY_HISTORY_PUBLISH_DAYS = 180
+MONTHLY_HISTORY_PUBLISH_MONTHS = 12
 YEARLY_USAGE_SENSOR_NAME = "sensor.yearly_electricity_usage"
 YEARLY_CHARGE_SENSOR_NAME = "sensor.yearly_electricity_charge"
 MONTH_USAGE_SENSOR_NAME = "sensor.month_electricity_usage"
@@ -41,6 +43,7 @@ SENSOR_FRIENDLY_LABELS = {
     TOTAL_USAGE_SENSOR_NAME: "总用电量",
     TOTAL_CHARGE_SENSOR_NAME: "总电费",
     DAILY_HISTORY_SENSOR_NAME: "日用电历史",
+    MONTHLY_HISTORY_SENSOR_NAME: "月用电历史",
     MONTH_USAGE_SENSOR_NAME: "本月电量",
     MONTH_CHARGE_SENSOR_NAME: "本月电费",
     YEARLY_USAGE_SENSOR_NAME: "本年电量",

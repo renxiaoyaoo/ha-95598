@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from scripts.const import DAILY_HISTORY_PUBLISH_DAYS
+from scripts.const import DAILY_HISTORY_PUBLISH_DAYS, MONTHLY_HISTORY_PUBLISH_MONTHS
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -422,7 +422,7 @@ class SqliteDB:
         try:
             cursor.execute(
                 """
-                SELECT date, total_usage, COALESCE(total_charge, 0), valley_usage, flat_usage, peak_usage, tip_usage
+                SELECT date, total_usage, COALESCE(total_charge, 0)
                 FROM daily_usage
                 WHERE user_id = ?
                 ORDER BY date DESC
@@ -439,10 +439,6 @@ class SqliteDB:
                     "date": row[0],
                     "usage": self._safe_float(row[1], default=0.0),
                     "charge": self._safe_float(row[2], default=0.0),
-                    "valley_usage": self._safe_float(row[3], default=0.0),
-                    "flat_usage": self._safe_float(row[4], default=0.0),
-                    "peak_usage": self._safe_float(row[5], default=0.0),
-                    "tip_usage": self._safe_float(row[6], default=0.0),
                 }
                 for row in rows
             ]
@@ -453,6 +449,40 @@ class SqliteDB:
                 "series_days": len(series),
                 "series": series,
             }
+        finally:
+            cursor.close()
+
+    def get_recent_monthly_history(self, months: int = MONTHLY_HISTORY_PUBLISH_MONTHS) -> list[dict[str, Any]]:
+        if self.connect is None or self.user_id is None:
+            logging.error("Database connection is not established.")
+            return []
+
+        cursor = self.connect.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT month, total_usage, COALESCE(total_charge, 0), valley_usage, flat_usage, peak_usage, tip_usage
+                FROM monthly_usage
+                WHERE user_id = ?
+                ORDER BY month DESC
+                LIMIT ?
+                """,
+                (self.user_id, months),
+            )
+            rows = cursor.fetchall()
+            rows.reverse()
+            return [
+                {
+                    "month": row[0],
+                    "usage": self._safe_float(row[1], default=0.0),
+                    "charge": self._safe_float(row[2], default=0.0),
+                    "valley_usage": self._safe_float(row[3], default=0.0),
+                    "flat_usage": self._safe_float(row[4], default=0.0),
+                    "peak_usage": self._safe_float(row[5], default=0.0),
+                    "tip_usage": self._safe_float(row[6], default=0.0),
+                }
+                for row in rows
+            ]
         finally:
             cursor.close()
 
