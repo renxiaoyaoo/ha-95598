@@ -9,7 +9,12 @@
 [![Docker Compose](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED.svg)](docker-compose.image.yml)
 [![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-555.svg)](.github/workflows/docker-publish.yml)
 [![Data](https://img.shields.io/badge/storage-SQLite-003B57.svg)](#数据和文件)
-[![Field Data](https://img.shields.io/badge/field%20data-318%20days-2ea44f.svg)](#效果预览)
+
+<p align="center">
+  <a href="#效果预览">
+    <img height="40" alt="Field data badge" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frenxiaoyaoo%2Fha-95598%2Fmain%2Fdocs%2Ffield-data-badge.json&style=for-the-badge" />
+  </a>
+</p>
 
 本项目会定时登录 [`95598`](https://95598.cn/)，获取余额、日/月/年用电量、电费和日用电历史，通过 MQTT Discovery 发布到 Home Assistant，并把结构化历史数据保存到本地 SQLite。
 
