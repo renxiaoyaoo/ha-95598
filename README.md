@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="#效果预览">
-    <img height="40" alt="Field data badge" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frenxiaoyaoo%2Fha-95598%2Fmain%2Fdocs%2Ffield-data-badge.json&style=for-the-badge" />
+    <img height="40" alt="Field data since 2025-09-01" src="https://img.shields.io/badge/field%20data-since%202025--09--01-2ea44f?style=for-the-badge&logo=homeassistant&logoColor=white" />
   </a>
 </p>
 
