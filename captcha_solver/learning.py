@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -84,6 +84,7 @@ class CaptchaLearningStore:
     def record(self, outcome: str, answer_image, bg_image, diagnostics: dict, suffix: str) -> None:
         try:
             self.sample_dir.mkdir(parents=True, exist_ok=True)
+            self.prune_artifacts()
             outcome_dir = self.sample_dir / outcome
             outcome_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -103,6 +104,49 @@ class CaptchaLearningStore:
             logging.info("Saved captcha learning sample to %s", report_path)
         except Exception as exc:
             logging.info("Failed to save captcha learning sample: %s", exc)
+
+    def prune_artifacts(self) -> None:
+        """Keep local captcha samples useful without letting data/ grow forever."""
+        for outcome in ("success", "failed_click", "rejected"):
+            self._prune_files(
+                self.sample_dir / outcome,
+                retention_days=_env_int("CAPTCHA_SAMPLE_RETENTION_DAYS", 14),
+                max_files=_env_int("CAPTCHA_SAMPLE_MAX_FILES_PER_OUTCOME", 1500),
+            )
+        self._prune_files(
+            self.sample_dir / "replay_reports",
+            retention_days=_env_int("CAPTCHA_REPLAY_REPORT_RETENTION_DAYS", 14),
+            max_files=_env_int("CAPTCHA_REPLAY_REPORT_MAX_FILES", 500),
+        )
+
+    @staticmethod
+    def _prune_files(directory: Path, *, retention_days: int, max_files: int) -> None:
+        if not directory.exists():
+            return
+        files = [path for path in directory.rglob("*") if path.is_file()]
+        if not files:
+            return
+
+        to_delete: set[Path] = set()
+        if retention_days > 0:
+            cutoff = datetime.now() - timedelta(days=retention_days)
+            for path in files:
+                try:
+                    if datetime.fromtimestamp(path.stat().st_mtime) < cutoff:
+                        to_delete.add(path)
+                except Exception:
+                    continue
+
+        if max_files > 0:
+            remaining = [path for path in files if path not in to_delete]
+            remaining.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+            to_delete.update(remaining[max_files:])
+
+        for path in to_delete:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                continue
 
     def _load_state(self) -> dict:
         if not self.state_path.exists():
@@ -138,3 +182,10 @@ class CaptchaLearningStore:
             state[key] = state[key][-200:]
         state["thresholds"] = self._thresholds_from_state(state)
         self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except Exception:
+        return default

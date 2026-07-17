@@ -72,6 +72,7 @@ def auto_replay_once(data_dir: Path) -> None:
     learning_state["last_auto_replay"] = summary
     learning_state["thresholds"] = learning_store._thresholds_from_state(learning_state)
     learning_store.state_path.write_text(json.dumps(learning_state, ensure_ascii=False, indent=2), encoding="utf-8")
+    learning_store.prune_artifacts()
     state_path.write_text(json.dumps({"last_run_date": today}, ensure_ascii=False, indent=2), encoding="utf-8")
     logging.info(
         "Captcha auto replay completed: samples=%s accepted=%s rejected=%s",

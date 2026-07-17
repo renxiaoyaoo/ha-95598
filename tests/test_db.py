@@ -228,9 +228,9 @@ def test_recent_daily_history_default_keeps_180_days_with_usage_and_charge_only(
 
         assert history is not None
         assert history["series_days"] == DAILY_HISTORY_PUBLISH_DAYS
-        assert history["series"][0]["date"] == "2026-01-06"
+        assert history["series"][0] == ["2026-01-06", 6.0, 3.0]
         assert history["latest_date"] == "2026-07-04"
-        assert set(history["series"][0]) == {"date", "usage", "charge"}
+        assert history["series"][-1] == ["2026-07-04", 185.0, 92.5]
     finally:
         os.environ.pop("DB_NAME", None)
 

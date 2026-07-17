@@ -64,6 +64,7 @@ class SensorUpdater:
         self.publish_tou_detail_sensors = tou_detail_enabled()
         self._mqtt_client = None
         self._mqtt_connected = False
+        self._published_discovery_topics: set[str] = set()
         self.notifier = build_notifier()
         self.cache_store = CacheStore(ROOT_DIR / "data" / "ha_95598_cache.json")
         self.db = SqliteDB()
@@ -167,7 +168,7 @@ class SensorUpdater:
     def _publish_mqtt(self, topic: str, payload, retain: bool = None):
         client = self._ensure_mqtt_client()
         if client is None:
-            return
+            return False
         if retain is None:
             retain = self.mqtt_retain
         if not isinstance(payload, str):
@@ -177,6 +178,7 @@ class SensorUpdater:
         if message.rc != mqtt.MQTT_ERR_SUCCESS:
             self._mqtt_connected = False
             raise RuntimeError(f"Message publish failed: {mqtt.error_string(message.rc)}")
+        return True
 
     def close(self):
         if self._mqtt_client is None:
@@ -200,6 +202,10 @@ class SensorUpdater:
         return f"{self.discovery_prefix}/sensor/{self._sensor_object_id(sensor_name)}/config"
 
     def _publish_discovery(self, sensor_name: str, user_id: str, device_class: str, unit: str, icon: str, state_class: str):
+        topic = self._discovery_topic(sensor_name)
+        if topic in self._published_discovery_topics:
+            return
+
         friendly_name = self._sensor_friendly_label(sensor_name, user_id)
         payload = {
             "name": friendly_name,
@@ -217,7 +223,8 @@ class SensorUpdater:
             payload["unit_of_measurement"] = unit
         if device_class:
             payload["device_class"] = device_class
-        self._publish_mqtt(self._discovery_topic(sensor_name), payload, retain=True)
+        if self._publish_mqtt(topic, payload, retain=True):
+            self._published_discovery_topics.add(topic)
 
     def _publish_sensor_state(
         self,

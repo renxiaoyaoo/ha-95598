@@ -435,17 +435,17 @@ class SqliteDB:
                 return None
             rows.reverse()
             series = [
-                {
-                    "date": row[0],
-                    "usage": self._safe_float(row[1], default=0.0),
-                    "charge": self._safe_float(row[2], default=0.0),
-                }
+                [
+                    row[0],
+                    self._safe_float(row[1], default=0.0),
+                    self._safe_float(row[2], default=0.0),
+                ]
                 for row in rows
             ]
             latest = series[-1]
             return {
-                "state": latest["usage"],
-                "latest_date": latest["date"],
+                "state": latest[1],
+                "latest_date": latest[0],
                 "series_days": len(series),
                 "series": series,
             }

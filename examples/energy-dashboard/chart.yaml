@@ -76,8 +76,8 @@ series:
     extend_to: end
     data_generator: |
       return (entity.attributes.series || []).map((item) => [
-        new Date(item.date + "T00:00:00").getTime(),
-        item.charge
+        new Date((Array.isArray(item) ? item[0] : item.date) + "T00:00:00").getTime(),
+        Array.isArray(item) ? item[2] : item.charge
       ]);
   - entity: sensor.daily_electricity_history_xxxx
     name: 用电量
@@ -91,6 +91,6 @@ series:
     extend_to: end
     data_generator: |
       return (entity.attributes.series || []).map((item) => [
-        new Date(item.date + "T00:00:00").getTime(),
-        item.usage
+        new Date((Array.isArray(item) ? item[0] : item.date) + "T00:00:00").getTime(),
+        Array.isArray(item) ? item[1] : item.usage
       ]);
