@@ -8,7 +8,7 @@
 
 ### 里面有什么
 
-- [`chart.yaml`](energy-dashboard/chart.yaml)：每日电费 + 每日用电量的 `apexcharts-card` 配置。
+- [`chart.yaml`](energy-dashboard/chart.yaml)：近 `180` 天每日电费的 `apexcharts-card` 配置。
 - [`daily-chart.png`](energy-dashboard/daily-chart.png)：图表效果图。
 - [`energy-panel.png`](energy-dashboard/energy-panel.png)：Home Assistant 能源面板配置参考。
 - [`entities.png`](energy-dashboard/entities.png)：实体名称和展示效果参考。
@@ -16,7 +16,7 @@
 ### 怎么用
 
 1. 打开 `energy-dashboard/chart.yaml`。
-2. 把 `sensor.daily_electricity_history_xxxx` 换成你自己的实体 ID。
+2. 把 `sensor.95598_xxxx_daily_electricity_history_xxxx` 换成你自己的日用电历史实体 ID。
 3. 把 YAML 直接粘到 Home Assistant 仪表盘里。
 4. 按截图微调样式。
 

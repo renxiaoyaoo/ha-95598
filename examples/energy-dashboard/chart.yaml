@@ -1,96 +1,60 @@
 type: custom:apexcharts-card
-card_mod:
-  style: |
-    ha-card .wrapper.with-header > * {
-      min-width: 0;
-      min-height: 0;
-    }
 header:
   show: true
-  title: 每日电费与用电量
-  show_states: true
-graph_span: 30d
+  title: 近180天每日电费
+  show_states: false
 apex_config:
   chart:
-    height: 240
+    height: 190
     toolbar:
       show: false
     background: transparent
+  grid:
+    borderColor: rgba(90,90,90,0.14)
+    strokeDashArray: 2
   stroke:
     curve: smooth
     width: 2
   fill:
     type: gradient
     gradient:
-      shadeIntensity: 0
-      opacityFrom: 0.6
-      opacityTo: 0.4
+      opacityFrom: 0.35
+      opacityTo: 0.06
+  dataLabels:
+    enabled: false
   legend:
-    show: true
+    show: false
   xaxis:
     type: datetime
-    tooltip:
-      enabled: false
     labels:
       datetimeUTC: false
       format: MM/dd
-  yaxis:
-    - id: charge
-      opposite: false
-      decimalsInFloat: 2
-      title:
-        text: 元
-      labels:
-        formatter: |
-          EVAL:function(value) { return value.toFixed(2); }
-    - id: usage
-      opposite: true
-      decimalsInFloat: 2
-      title:
-        text: kWh
-      labels:
-        formatter: |
-          EVAL:function(value) { return value.toFixed(2); }
   tooltip:
-    theme: light
     x:
-      show: true
-      format: MM-dd
+      format: yyyy-MM-dd
     "y":
       formatter: |
-        EVAL:function(value, { seriesIndex }) {
-          return seriesIndex === 0
-            ? value.toFixed(2) + ' 元'
-            : value.toFixed(2) + ' kWh';
-        }
+        EVAL:function(value) { return value.toFixed(2) + ' 元'; }
 series:
-  - entity: sensor.daily_electricity_history_xxxx
+  - entity: sensor.95598_xxxx_daily_electricity_history_xxxx
     name: 电费
     unit: 元
+    float_precision: 2
     type: area
-    color: "#34C759"
-    yaxis_id: charge
-    float_precision: 2
-    show:
-      legend_value: false
-    extend_to: end
+    color: "#2f7d59"
     data_generator: |
-      return (entity.attributes.series || []).map((item) => [
-        new Date((Array.isArray(item) ? item[0] : item.date) + "T00:00:00").getTime(),
-        Array.isArray(item) ? item[2] : item.charge
-      ]);
-  - entity: sensor.daily_electricity_history_xxxx
-    name: 用电量
-    unit: kWh
-    type: line
-    color: "#007AFF"
-    yaxis_id: usage
-    float_precision: 2
-    show:
-      legend_value: false
-    extend_to: end
-    data_generator: |
-      return (entity.attributes.series || []).map((item) => [
-        new Date((Array.isArray(item) ? item[0] : item.date) + "T00:00:00").getTime(),
-        Array.isArray(item) ? item[1] : item.usage
-      ]);
+      return (entity.attributes.series || [])
+        .map((item) => {
+          if (!item.date || item.charge === undefined || item.charge === null) return null;
+          return [new Date(item.date + "T00:00:00").getTime(), Number(item.charge)];
+        })
+        .filter((point) => point && Number.isFinite(point[1]));
+    extend_to: false
+grid_options:
+  columns: full
+  rows: auto
+now:
+  show: false
+graph_span: 180d
+span:
+  end: day
