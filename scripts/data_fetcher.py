@@ -24,6 +24,7 @@ from scripts.support.credentials import LoginCredential, mask_account, mask_user
 from scripts.support.login_manager import LoginManager
 from scripts.support.ha95598_navigator import Ha95598Navigator
 from scripts.support.ha_energy_backfiller import HaEnergyStatisticsBackfiller
+from scripts.support.user_ids import resolve_user_ids
 
 from scripts.const import BALANCE_URL, ELECTRIC_BILL_SUMMARY_URL
 
@@ -195,6 +196,15 @@ class DataFetcher:
     def log_page_state(self, driver, label: Optional[str] = None) -> None:
         self._log_page_state(driver, label)
 
+    def _resolve_user_id_list(self, driver, updater) -> list[str]:
+        local_user_ids = self._known_user_ids_from_local_state(updater)
+        if local_user_ids:
+            logging.info("Use %s locally known user id(s).", len(local_user_ids))
+        else:
+            logging.info("Try to get the userid list from page.")
+
+        return resolve_user_ids(local_user_ids, lambda: self.navigator.get_user_ids(driver))
+
     def fetch(self):
 
         """main logic here"""
@@ -209,14 +219,7 @@ class DataFetcher:
             self.login_manager.restore_or_login(driver)
 
             self._step_sleep(driver, "after_login_success")
-            logging.info(f"Try to get the userid list")
-            try:
-                user_id_list = self.navigator.get_user_ids(driver)
-            except Exception as exc:
-                user_id_list = self._known_user_ids_from_local_state(updater)
-                if not user_id_list:
-                    raise
-                logging.warning("Failed to parse user id list from page: %s. Use locally known user ids.", exc)
+            user_id_list = self._resolve_user_id_list(driver, updater)
             logging.info("Here are a total of %s userids, which are %s among which %s will be ignored.", len(user_id_list), mask_user_ids(user_id_list), mask_user_ids(self.IGNORE_USER_ID))
             self._step_sleep(driver, "after_get_user_ids")
 
