@@ -621,14 +621,19 @@ class DataFetcher:
             progress = updater.get_progress(user_id)
             cached = updater.get_cached_user_data(user_id)
 
-        balance = cached.get("balance")
+        cached_balance = cached.get("balance")
+        balance = cached_balance
         if self._has_completed_stage(progress, "balance"):
             logging.info("Skip balance fetch for %s because today's progress already exists.", mask_user_id(user_id))
         else:
-            balance = self._get_electric_balance(driver)
-            if (balance is None):
-                logging.error(f"Get electricity charge balance for {mask_user_id(user_id)} failed, Pass.")
+            fetched_balance = self._get_electric_balance(driver)
+            if fetched_balance is None:
+                if cached_balance is None:
+                    logging.warning("Get electricity charge balance for %s failed, no cached balance available.", mask_user_id(user_id))
+                else:
+                    logging.warning("Get electricity charge balance for %s failed, keep cached balance.", mask_user_id(user_id))
             else:
+                balance = fetched_balance
                 logging.info(
                     f"Get electricity charge balance for {mask_user_id(user_id)} successfully, balance is {balance} CNY.")
                 updater.save_partial_data(user_id, balance=balance)
