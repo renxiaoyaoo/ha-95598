@@ -247,11 +247,16 @@ class DataFetcher:
                         driver.get(BALANCE_URL)
                         self._log_page_state(driver, "after_open_balance_url")
                         self._step_sleep(driver, "after_open_balance_url")
-                        current_userid = self.navigator.ensure_target_userid(driver, userid_index, expected_user_id=user_id)
-                        self._step_sleep(driver, f"after_choose_balance_user_{userid_index}")
-                        if current_userid in self.IGNORE_USER_ID:
-                            logging.info("The user ID %s will be ignored in user_id_list", mask_user_id(current_userid))
-                            continue
+                        if len(user_id_list) > 1:
+                            current_userid = self.navigator.ensure_target_userid(
+                                driver, userid_index, expected_user_id=user_id
+                            )
+                            self._step_sleep(driver, f"after_choose_balance_user_{userid_index}")
+                            if current_userid in self.IGNORE_USER_ID:
+                                logging.info("The user ID %s will be ignored in user_id_list", mask_user_id(current_userid))
+                                continue
+                        else:
+                            logging.info("Skip user switching because there is only one known user.")
                     else:
                         logging.info(
                             "Skip opening balance page for %s because today's progress already passed balance stage.",
