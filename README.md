@@ -239,7 +239,7 @@ HA_ENERGY_BACKFILL_BACKUP=true
 | `pages/` | 页面追踪和错误快照 |
 | `login_qr_code.png` | 二维码登录临时文件 |
 
-查看数据库：
+查看本地数据摘要：
 
 ```bash
 docker compose run --rm ha-95598 python3 -m scripts.show_db
@@ -250,6 +250,8 @@ docker compose run --rm ha-95598 python3 -m scripts.show_db
 ```bash
 .venv/bin/python -m scripts.show_db
 ```
+
+需要排查缓存状态时可以加 `--details`，数据库明细不会直接打印。
 
 按日期范围补充日用电数据：
 
