@@ -14,6 +14,7 @@ from scripts.support.fetch_progress import FETCH_STAGES as ALL_FETCH_STAGES
 from scripts.support.ha_payloads import HistoryPayloadBuilder
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
+from scripts.support.stale_alert import StaleDataAlertChecker
 from scripts.const import (
     BALANCE_SENSOR_NAME,
     BALANCE_UNIT,
@@ -70,6 +71,7 @@ class SensorUpdater:
         self.notifier = build_notifier()
         self.cache_store = CacheStore(ROOT_DIR / "data" / "ha_95598_cache.json")
         self.db = SqliteDB()
+        self.stale_alert_checker = StaleDataAlertChecker(self.notifier, self.update_progress)
 
     def _device_payload(self, user_id: str):
         return {
@@ -438,30 +440,7 @@ class SensorUpdater:
             return False
 
     def _check_and_notify_stale_data(self, user_id: str, entry: dict):
-        stale_days_threshold = int(os.getenv("STALE_DATA_ALERT_DAYS", 2))
-        user_data = entry.get("data", {}) if isinstance(entry, dict) else {}
-        progress = entry.get("progress", {}) if isinstance(entry, dict) else {}
-        latest_date = user_data.get("last_daily_date")
-        if not latest_date:
-            return
-
-        try:
-            latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
-        except Exception:
-            logging.warning("Failed to parse last_daily_date for stale data alert: %s", latest_date)
-            return
-
-        stale_days = (datetime.now().date() - latest_dt).days
-        alert_key = f"{latest_date}:{stale_days}"
-        sent_key = progress.get("stale_alert_sent_key")
-
-        if stale_days > stale_days_threshold:
-            if sent_key == alert_key:
-                return
-            if self.notifier.send_stale_data_alert(user_id, latest_date, stale_days):
-                self.update_progress(user_id, stale_alert_sent_key=alert_key)
-        elif sent_key:
-            self.update_progress(user_id, stale_alert_sent_key=None)
+        self.stale_alert_checker.check(user_id, entry)
 
     def update_last_daily_usage(self, user_id: str, postfix: str, last_daily_date: str, sensorState: float):
         sensorName = DAILY_USAGE_SENSOR_NAME + postfix
