@@ -93,7 +93,7 @@ def test_sqlite_initializes_clean_schema_without_legacy_migration(tmp_path) -> N
         os.environ.pop("DB_NAME", None)
 
 
-def test_sync_yearly_from_monthly_aggregates_tou(tmp_path) -> None:
+def test_refresh_year_from_months_aggregates_tou(tmp_path) -> None:
     db_path = tmp_path / "aggregate.db"
     os.environ["DB_NAME"] = str(db_path)
     db = SqliteDB()
@@ -121,7 +121,7 @@ def test_sync_yearly_from_monthly_aggregates_tou(tmp_path) -> None:
                 "tip_usage": 0,
             }
         )
-        assert db.sync_yearly_from_monthly("2026") is True
+        assert db.refresh_year_from_months("2026") is True
         db.close_connect()
 
         conn = sqlite3.connect(db_path)
@@ -141,13 +141,13 @@ def test_sync_yearly_from_monthly_aggregates_tou(tmp_path) -> None:
         os.environ.pop("DB_NAME", None)
 
 
-def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
+def test_upsert_calculated_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
     db_path = tmp_path / "official_monthly.db"
     os.environ["DB_NAME"] = str(db_path)
     db = SqliteDB()
     try:
         assert db.connect_user_db("test_user") is True
-        assert db.insert_official_monthly_data(
+        assert db.upsert_official_monthly_bill(
             {
                 "month": "2026-07",
                 "total_usage": 576,
@@ -170,7 +170,7 @@ def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
             }
         )
 
-        assert db.sync_monthly_from_daily("2026-07") is True
+        assert db.upsert_calculated_monthly_from_daily("2026-07") is True
         monthly = db.get_period_row("monthly_usage", "month", "2026-07")
 
         assert monthly is not None
@@ -181,7 +181,7 @@ def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
         os.environ.pop("DB_NAME", None)
 
 
-def test_sync_monthly_from_daily_creates_calculated_month_when_no_official_bill(tmp_path) -> None:
+def test_upsert_calculated_monthly_from_daily_creates_calculated_month_when_no_official_bill(tmp_path) -> None:
     db_path = tmp_path / "calculated_monthly.db"
     os.environ["DB_NAME"] = str(db_path)
     db = SqliteDB()
@@ -199,7 +199,7 @@ def test_sync_monthly_from_daily_creates_calculated_month_when_no_official_bill(
             }
         )
 
-        assert db.sync_monthly_from_daily("2026-08") is True
+        assert db.upsert_calculated_monthly_from_daily("2026-08") is True
         monthly = db.get_period_row("monthly_usage", "month", "2026-08")
 
         assert monthly is not None

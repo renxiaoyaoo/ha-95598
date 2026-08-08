@@ -198,7 +198,7 @@ class DataPersister:
 
             current_month_key = str(last_daily_date)[:7] if last_daily_date else None
             if current_month_key:
-                self.db.sync_monthly_from_daily(current_month_key)
+                self.db.upsert_calculated_monthly_from_daily(current_month_key)
 
             if yearly_usage is not None:
                 if last_daily_date:
@@ -221,11 +221,11 @@ class DataPersister:
                 )
 
             if current_month_key:
-                self.db.sync_yearly_from_monthly(current_month_key[:4])
+                self.db.refresh_year_from_months(current_month_key[:4])
             elif month:
                 for month_value in month:
                     normalized_month = self._normalize_month_value(month_value, datetime.now().strftime("%Y"))
-                    self.db.sync_yearly_from_monthly(normalized_month[:4])
+                    self.db.refresh_year_from_months(normalized_month[:4])
         finally:
             self.db.close_connect()
 

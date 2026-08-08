@@ -88,7 +88,7 @@ class MonthlyBillFetcher:
 
             for row in rows:
                 existing = self.db.get_period_row("monthly_usage", "month", row["month"]) or {}
-                self.db.insert_official_monthly_data(
+                self.db.upsert_official_monthly_bill(
                     {
                         "month": row["month"],
                         "total_usage": row.get("total_usage")
@@ -106,7 +106,7 @@ class MonthlyBillFetcher:
                 touched_years.add(row["month"][:4])
 
             for year in sorted(touched_years):
-                self.db.sync_yearly_from_monthly(year)
+                self.db.refresh_year_from_months(year)
         finally:
             self.db.close_connect()
 

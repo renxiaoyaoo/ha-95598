@@ -151,9 +151,9 @@ class DailyRangeFetchService:
                 persisted_count += 1
 
             for month in sorted(touched_months):
-                self.db.sync_monthly_from_daily(month)
+                self.db.upsert_calculated_monthly_from_daily(month)
             for year in sorted(touched_years):
-                self.db.sync_yearly_from_monthly(year)
+                self.db.refresh_year_from_months(year)
         finally:
             self.db.close_connect()
 

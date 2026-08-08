@@ -228,10 +228,13 @@ class SqliteDB:
     def insert_yearly_data(self, data: dict) -> bool:
         return self._upsert_period_data(self.YEARLY_TABLE, "year", data)
 
-    def insert_official_monthly_data(self, data: dict) -> bool:
+    def upsert_official_monthly_bill(self, data: dict) -> bool:
         row = dict(data)
         row["source"] = self.MONTHLY_SOURCE_OFFICIAL
         return self.insert_monthly_data(row)
+
+    def insert_official_monthly_data(self, data: dict) -> bool:
+        return self.upsert_official_monthly_bill(data)
 
     def _normalize_monthly_source(self, value: Any) -> str:
         source = str(value or self.MONTHLY_SOURCE_CALCULATED).strip() or self.MONTHLY_SOURCE_CALCULATED
@@ -565,7 +568,7 @@ class SqliteDB:
         finally:
             cursor.close()
 
-    def sync_yearly_from_monthly(self, year: str) -> bool:
+    def refresh_year_from_months(self, year: str) -> bool:
         if self.connect is None or self.user_id is None:
             logging.error("Database connection is not established.")
             return False
@@ -604,7 +607,10 @@ class SqliteDB:
         finally:
             cursor.close()
 
-    def sync_monthly_from_daily(self, month: str) -> bool:
+    def sync_yearly_from_monthly(self, year: str) -> bool:
+        return self.refresh_year_from_months(year)
+
+    def upsert_calculated_monthly_from_daily(self, month: str) -> bool:
         if self.connect is None or self.user_id is None:
             logging.error("Database connection is not established.")
             return False
@@ -648,6 +654,9 @@ class SqliteDB:
             )
         finally:
             cursor.close()
+
+    def sync_monthly_from_daily(self, month: str) -> bool:
+        return self.upsert_calculated_monthly_from_daily(month)
 
     def _upsert_period_data(self, table_name: str, period_key: str, data: dict) -> bool:
         if self.connect is None or self.user_id is None:
