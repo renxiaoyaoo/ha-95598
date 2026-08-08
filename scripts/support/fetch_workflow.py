@@ -1,6 +1,7 @@
 import logging
 
 from scripts.support.credentials import mask_user_id
+from scripts.support.data_persister import FetchedUserData
 
 
 class FetchWorkflow:
@@ -166,21 +167,23 @@ class FetchWorkflow:
             date, usages = fetcher._get_daily_usage_data(driver)
             last_daily_charge = fetcher._save_user_data(
                 user_id,
-                last_daily_date,
-                last_daily_usage,
-                last_daily_charge,
-                date,
-                usages,
-                month,
-                month_usage,
-                month_charge,
-                yearly_charge,
-                yearly_usage,
-                valley_usage,
-                flat_usage,
-                peak_usage,
-                tip_usage,
-                daily_tou_map,
+                FetchedUserData(
+                    last_daily_date=last_daily_date,
+                    last_daily_usage=last_daily_usage,
+                    last_daily_charge=last_daily_charge,
+                    daily_dates=date,
+                    daily_usages=usages,
+                    months=month,
+                    month_usage=month_usage,
+                    month_charge=month_charge,
+                    yearly_charge=yearly_charge,
+                    yearly_usage=yearly_usage,
+                    valley_usage=valley_usage,
+                    flat_usage=flat_usage,
+                    peak_usage=peak_usage,
+                    tip_usage=tip_usage,
+                    daily_tou_map=daily_tou_map,
+                ),
             )
             updater.save_partial_data(user_id, last_daily_charge=last_daily_charge)
             updater.update_progress_stage(user_id, "persist", fetch_date=fetcher._progress_date())

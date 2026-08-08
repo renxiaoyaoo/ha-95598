@@ -1,10 +1,30 @@
 import logging
 from datetime import datetime
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from scripts.support.db import SqliteDB
 from scripts.support.monthly_billing import MonthlyBillingService
 from scripts.support.tou_price import TimeOfUsePriceResolver
+
+
+@dataclass
+class FetchedUserData:
+    last_daily_date: str | None = None
+    last_daily_usage: Any = None
+    last_daily_charge: Any = None
+    daily_dates: list[Any] | None = None
+    daily_usages: list[Any] | None = None
+    months: list[Any] | None = None
+    month_usage: list[Any] | None = None
+    month_charge: list[Any] | None = None
+    yearly_charge: Any = None
+    yearly_usage: Any = None
+    valley_usage: Any = None
+    flat_usage: Any = None
+    peak_usage: Any = None
+    tip_usage: Any = None
+    daily_tou_map: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class DataPersister:
@@ -63,10 +83,46 @@ class DataPersister:
         tip_usage,
         daily_tou_map=None,
     ):
+        return self.save_fetched_user_data(
+            user_id,
+            FetchedUserData(
+                last_daily_date=last_daily_date,
+                last_daily_usage=last_daily_usage,
+                last_daily_charge=last_daily_charge,
+                daily_dates=date,
+                daily_usages=usages,
+                months=month,
+                month_usage=month_usage,
+                month_charge=month_charge,
+                yearly_charge=yearly_charge,
+                yearly_usage=yearly_usage,
+                valley_usage=valley_usage,
+                flat_usage=flat_usage,
+                peak_usage=peak_usage,
+                tip_usage=tip_usage,
+                daily_tou_map=daily_tou_map or {},
+            ),
+        )
+
+    def save_fetched_user_data(self, user_id, data: FetchedUserData):
+        last_daily_date = data.last_daily_date
+        last_daily_usage = data.last_daily_usage
+        last_daily_charge = data.last_daily_charge
+        date = data.daily_dates
+        usages = data.daily_usages
+        month = data.months
+        month_usage = data.month_usage
+        month_charge = data.month_charge
+        yearly_charge = data.yearly_charge
+        yearly_usage = data.yearly_usage
+        valley_usage = data.valley_usage
+        flat_usage = data.flat_usage
+        peak_usage = data.peak_usage
+        tip_usage = data.tip_usage
+        daily_tou_map = data.daily_tou_map or {}
+
         if self.db is None:
             return last_daily_charge
-
-        daily_tou_map = daily_tou_map or {}
 
         if not self.db.connect_user_db(user_id):
             logging.info("The database creation failed and the data was not written correctly.")

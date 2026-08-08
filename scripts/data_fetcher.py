@@ -11,7 +11,7 @@ from scripts.fetchers.usage import UsageFetcher
 from scripts.pages.usage_page import UsagePage
 from scripts.sensor_updater import SensorUpdater
 from scripts.support.browser_factory import create_chromium_driver
-from scripts.support.data_persister import DataPersister
+from scripts.support.data_persister import DataPersister, FetchedUserData
 from scripts.support.error_watcher import ErrorWatcher
 from scripts.support.fetch_progress import has_completed_stage
 from typing import Optional
@@ -362,40 +362,5 @@ class DataFetcher:
     def _get_daily_usage_window_days() -> int:
         return UsageFetcher.get_daily_usage_window_days()
 
-    def _save_user_data(
-        self,
-        user_id,
-        last_daily_date,
-        last_daily_usage,
-        last_daily_charge,
-        date,
-        usages,
-        month,
-        month_usage,
-        month_charge,
-        yearly_charge,
-        yearly_usage,
-        valley_usage,
-        flat_usage,
-        peak_usage,
-        tip_usage,
-        daily_tou_map=None,
-    ):
-        return self.data_persister.save_user_data(
-            user_id,
-            last_daily_date,
-            last_daily_usage,
-            last_daily_charge,
-            date,
-            usages,
-            month,
-            month_usage,
-            month_charge,
-            yearly_charge,
-            yearly_usage,
-            valley_usage,
-            flat_usage,
-            peak_usage,
-            tip_usage,
-            daily_tou_map=daily_tou_map,
-        )
+    def _save_user_data(self, user_id, data: FetchedUserData):
+        return self.data_persister.save_fetched_user_data(user_id, data)
