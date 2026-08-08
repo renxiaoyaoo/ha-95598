@@ -1,17 +1,15 @@
-import json
 import logging
 import os
 import re
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import paho.mqtt.client as mqtt
 from scripts.support.cache_store import CacheStore
 from scripts.support.credentials import mask_user_id
 from scripts.support.db import SqliteDB
 from scripts.support.fetch_progress import FETCH_STAGES as ALL_FETCH_STAGES
 from scripts.support.ha_payloads import HistoryPayloadBuilder
+from scripts.support.mqtt_publisher import MqttPublisher
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
 from scripts.support.stale_alert import StaleDataAlertChecker
@@ -62,11 +60,16 @@ class SensorUpdater:
         self.mqtt_client_id = os.getenv("MQTT_CLIENT_ID", f"ha-95598-{os.getpid()}")
         self.discovery_prefix = os.getenv("MQTT_DISCOVERY_PREFIX", "homeassistant").strip("/") or "homeassistant"
         self.state_prefix = os.getenv("MQTT_STATE_PREFIX", "ha_95598").strip("/") or "ha_95598"
-        self.mqtt_qos = int(os.getenv("MQTT_QOS", 1))
-        self.mqtt_retain = os.getenv("MQTT_RETAIN", "true").lower() == "true"
         self.publish_tou_detail_sensors = tou_detail_enabled()
-        self._mqtt_client = None
-        self._mqtt_connected = False
+        self.mqtt_publisher = MqttPublisher(
+            host=self.mqtt_host,
+            port=self.mqtt_port,
+            username=self.mqtt_username,
+            password=self.mqtt_password,
+            client_id=self.mqtt_client_id,
+            qos=int(os.getenv("MQTT_QOS", 1)),
+            retain=os.getenv("MQTT_RETAIN", "true").lower() == "true",
+        )
         self._published_discovery_topics: set[str] = set()
         self.notifier = build_notifier()
         self.cache_store = CacheStore(ROOT_DIR / "data" / "ha_95598_cache.json")
@@ -114,85 +117,13 @@ class SensorUpdater:
         )
 
     def _mqtt_enabled(self) -> bool:
-        return bool(self.mqtt_host)
-
-    def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
-        self._mqtt_connected = rc == 0
-        if self._mqtt_connected:
-            logging.info("Connected to MQTT broker %s:%s", self.mqtt_host, self.mqtt_port)
-        else:
-            logging.warning("MQTT connection failed with rc=%s", rc)
-
-    def _on_mqtt_disconnect(self, client, userdata, rc, properties=None):
-        self._mqtt_connected = False
-        if rc != 0:
-            logging.warning("Disconnected from MQTT broker unexpectedly (rc=%s).", rc)
-
-    def _wait_for_mqtt_connection(self, timeout_seconds: float = 5.0) -> bool:
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
-            if self._mqtt_connected:
-                return True
-            time.sleep(0.1)
-        return self._mqtt_connected
-
-    def _connect_mqtt_client(self, client, reconnect: bool = False) -> bool:
-        try:
-            if reconnect:
-                client.reconnect()
-            else:
-                client.connect(self.mqtt_host, self.mqtt_port, keepalive=60)
-            return self._wait_for_mqtt_connection()
-        except Exception as exc:
-            self._mqtt_connected = False
-            logging.warning("Failed to %s MQTT broker %s:%s: %s", "reconnect to" if reconnect else "connect to", self.mqtt_host, self.mqtt_port, exc)
-            return False
-
-    def _ensure_mqtt_client(self):
-        if not self._mqtt_enabled():
-            logging.info("MQTT_HOST is missing, skip MQTT publishing.")
-            return None
-
-        if self._mqtt_client is None:
-            client = mqtt.Client(client_id=self.mqtt_client_id)
-            client.on_connect = self._on_mqtt_connect
-            client.on_disconnect = self._on_mqtt_disconnect
-            if self.mqtt_username:
-                client.username_pw_set(self.mqtt_username, self.mqtt_password or None)
-            client.loop_start()
-            self._mqtt_client = client
-            if not self._connect_mqtt_client(client):
-                return None
-        elif not self._mqtt_connected:
-            if not self._connect_mqtt_client(self._mqtt_client, reconnect=True):
-                return None
-
-        return self._mqtt_client
+        return self.mqtt_publisher.enabled()
 
     def _publish_mqtt(self, topic: str, payload, retain: bool = None):
-        client = self._ensure_mqtt_client()
-        if client is None:
-            return False
-        if retain is None:
-            retain = self.mqtt_retain
-        if not isinstance(payload, str):
-            payload = json.dumps(payload, ensure_ascii=False)
-        message = client.publish(topic, payload=payload, qos=self.mqtt_qos, retain=retain)
-        message.wait_for_publish()
-        if message.rc != mqtt.MQTT_ERR_SUCCESS:
-            self._mqtt_connected = False
-            raise RuntimeError(f"Message publish failed: {mqtt.error_string(message.rc)}")
-        return True
+        return self.mqtt_publisher.publish(topic, payload, retain=retain)
 
     def close(self):
-        if self._mqtt_client is None:
-            return
-        try:
-            self._mqtt_client.loop_stop()
-            self._mqtt_client.disconnect()
-        finally:
-            self._mqtt_client = None
-            self._mqtt_connected = False
+        self.mqtt_publisher.close()
 
     def _sensor_object_id(self, sensor_name: str) -> str:
         if sensor_name.startswith("sensor."):
