@@ -9,6 +9,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from scripts.const import ELECTRIC_BILL_SUMMARY_URL
 from scripts.fetchers.vue_state import normalize_bill_detail, selected_vue_data
+from scripts.pages import bill_selectors as selectors
 from scripts.support.data_rows import MonthlyBillRow
 from scripts.support.monthly_billing import MonthlyBillingService
 
@@ -32,7 +33,7 @@ class MonthlyBillFetcher:
         self.log_page_state(driver, "after_open_bill_summary_url")
         self.step_sleep(driver, "after_open_bill_summary_url")
         WebDriverWait(driver, self.driver_wait_time).until(
-            EC.visibility_of_element_located((By.XPATH, "//div[contains(@class,'billContent_bill')]"))
+            EC.visibility_of_element_located((By.XPATH, selectors.BILL_CARD))
         )
 
     def sync(self, driver, user_id: str):
@@ -83,7 +84,7 @@ class MonthlyBillFetcher:
                     driver.back()
                     self.step_sleep(driver, f"after_return_bill_summary_{target_year}_{bill_index}")
                     WebDriverWait(driver, self.driver_wait_time).until(
-                        EC.visibility_of_element_located((By.XPATH, "//div[contains(@class,'billContent_bill')]"))
+                        EC.visibility_of_element_located((By.XPATH, selectors.BILL_CARD))
                     )
                     if needs_deep_sync:
                         self.expand_summary(driver)
@@ -98,7 +99,7 @@ class MonthlyBillFetcher:
         years = []
         year_nodes = WebDriverWait(driver, self.driver_wait_time).until(
             EC.visibility_of_all_elements_located(
-                (By.XPATH, "//div[contains(@class,'billList_timeSelection')]//div[contains(@class,'content_year')]/span")
+                (By.XPATH, selectors.BILL_YEAR_OPTIONS)
             )
         )
         for option in year_nodes:
@@ -113,7 +114,7 @@ class MonthlyBillFetcher:
         try:
             active_year = driver.find_element(
                 By.XPATH,
-                "//div[contains(@class,'billList_timeSelection')]//div[contains(@class,'content_sleectYear')]/span",
+                selectors.BILL_ACTIVE_YEAR,
             ).text.strip()
             if active_year == f"{target_year}年":
                 return True
@@ -122,7 +123,7 @@ class MonthlyBillFetcher:
                 EC.element_to_be_clickable(
                     (
                         By.XPATH,
-                        f"//div[contains(@class,'billList_timeSelection')]//div[contains(@class,'content_year')]/span[normalize-space()='{target_year}年']",
+                        selectors.bill_year_option(target_year),
                     )
                 )
             )
@@ -131,12 +132,12 @@ class MonthlyBillFetcher:
             WebDriverWait(driver, self.driver_wait_time).until(
                 lambda d: d.find_element(
                     By.XPATH,
-                    "//div[contains(@class,'billList_timeSelection')]//div[contains(@class,'content_sleectYear')]/span",
+                    selectors.BILL_ACTIVE_YEAR,
                 ).text.strip()
                 == f"{target_year}年"
             )
             WebDriverWait(driver, self.driver_wait_time).until(
-                EC.visibility_of_element_located((By.XPATH, "//div[contains(@class,'billContent_bill')]"))
+                EC.visibility_of_element_located((By.XPATH, selectors.BILL_CARD))
             )
             return True
         except Exception as exc:
@@ -145,19 +146,19 @@ class MonthlyBillFetcher:
 
     def expand_summary(self, driver) -> None:
         for _ in range(6):
-            buttons = driver.find_elements(By.XPATH, "//div[contains(@class,'content_button')]//*[contains(text(),'查看更多')]")
+            buttons = driver.find_elements(By.XPATH, selectors.BILL_EXPAND_BUTTON)
             if not buttons:
                 return
-            previous_count = len(driver.find_elements(By.XPATH, "//div[contains(@class,'billContent_bill')]"))
+            previous_count = len(driver.find_elements(By.XPATH, selectors.BILL_CARD))
             driver.execute_script("arguments[0].click();", buttons[0])
             self.step_sleep(driver, "after_expand_bill_summary")
-            current_count = len(driver.find_elements(By.XPATH, "//div[contains(@class,'billContent_bill')]"))
+            current_count = len(driver.find_elements(By.XPATH, selectors.BILL_CARD))
             if current_count <= previous_count:
                 return
 
     def get_visible_month_keys(self, driver) -> list[str]:
         month_keys = []
-        month_nodes = driver.find_elements(By.XPATH, "//div[contains(@class,'bill_time')]/span[1]")
+        month_nodes = driver.find_elements(By.XPATH, selectors.BILL_MONTH_LABEL)
         for node in month_nodes:
             month_key = self.parse_month_key(node.text)
             if month_key:
@@ -165,14 +166,14 @@ class MonthlyBillFetcher:
         return month_keys
 
     def open_detail_by_index(self, driver, bill_index: int) -> bool:
-        month_rows = driver.find_elements(By.XPATH, "//div[contains(@class,'billList_content')]")
+        month_rows = driver.find_elements(By.XPATH, selectors.BILL_LIST_ROW)
         if bill_index >= len(month_rows):
             return False
-        arrow = month_rows[bill_index].find_element(By.XPATH, ".//img[contains(@class,'back_right')]")
+        arrow = month_rows[bill_index].find_element(By.XPATH, selectors.BILL_ROW_DETAIL_ARROW)
         driver.execute_script("arguments[0].click();", arrow)
         self.step_sleep(driver, f"after_open_bill_detail_{bill_index}")
         WebDriverWait(driver, self.driver_wait_time).until(
-            EC.visibility_of_element_located((By.XPATH, "//div[contains(@class,'billInfo_cycle')]"))
+            EC.visibility_of_element_located((By.XPATH, selectors.BILL_DETAIL_CYCLE))
         )
         return True
 
@@ -193,7 +194,7 @@ class MonthlyBillFetcher:
             logging.debug("Failed to parse monthly bill detail from Vue state, fallback to DOM: %s", exc)
 
         try:
-            cycle_text = driver.find_element(By.XPATH, "//div[contains(@class,'billInfo_cycle')]").text
+            cycle_text = driver.find_element(By.XPATH, selectors.BILL_DETAIL_CYCLE).text
             month_key = self.parse_month_key(cycle_text)
             if month_key is None:
                 return None
@@ -231,7 +232,7 @@ class MonthlyBillFetcher:
         try:
             total_usage_text = driver.find_element(
                 By.XPATH,
-                "//span[contains(text(),'正向有功(总)')]/ancestor::div[contains(@class,'item_item')][1]/span[contains(@class,'thisReadPq')]",
+                selectors.BILL_TOTAL_USAGE,
             ).text
             return float(total_usage_text.strip())
         except Exception:
@@ -246,11 +247,11 @@ class MonthlyBillFetcher:
         }
         tou_items = driver.find_elements(
             By.XPATH,
-            "//div[contains(@class,'wrap_pvQtyJm')]//div[contains(@class,'right_top')]//div[contains(@class,'top_item')]",
+            selectors.BILL_TOU_ITEMS,
         )
         for item in tou_items:
-            label = item.find_element(By.XPATH, ".//span[contains(@class,'name')]").text.strip()
-            value_text = item.find_element(By.XPATH, ".//div[contains(@class,'item_right')]/span").text.strip()
+            label = item.find_element(By.XPATH, selectors.BILL_TOU_LABEL).text.strip()
+            value_text = item.find_element(By.XPATH, selectors.BILL_TOU_VALUE).text.strip()
             value = float(value_text or 0)
             if "低谷" in label or "谷" in label:
                 tou_values["valley_usage"] = value
@@ -267,7 +268,7 @@ class MonthlyBillFetcher:
         matched_charge_count = 0
         charge_items = driver.find_elements(
             By.XPATH,
-            "//div[contains(@class,'wrap_electricChargeJm')]//div[contains(@class,'prcGroup_amtGroup')]//div[contains(@class,'amt_item')]",
+            selectors.BILL_CHARGE_ITEMS,
         )
         for item in charge_items:
             spans = item.find_elements(By.XPATH, "./span")
