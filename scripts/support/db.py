@@ -17,6 +17,8 @@ class SqliteDB:
     DAILY_TABLE = "daily_usage"
     MONTHLY_TABLE = "monthly_usage"
     YEARLY_TABLE = "yearly_usage"
+    MONTHLY_SOURCE_CALCULATED = "calculated"
+    MONTHLY_SOURCE_OFFICIAL = "official"
 
     def __init__(self) -> None:
         self.connect: Optional[sqlite3.Connection] = None
@@ -188,7 +190,7 @@ class SqliteDB:
             flat_usage = self._safe_float(data.get("flat_usage"), default=0.0)
             peak_usage = self._safe_float(data.get("peak_usage"), default=0.0)
             tip_usage = self._safe_float(data.get("tip_usage"), default=0.0)
-            source = str(data.get("source") or "calculated").strip() or "calculated"
+            source = self._normalize_monthly_source(data.get("source"))
             self.connect.execute(
                 f"""
                 INSERT INTO {self.MONTHLY_TABLE} (
@@ -225,6 +227,17 @@ class SqliteDB:
 
     def insert_yearly_data(self, data: dict) -> bool:
         return self._upsert_period_data(self.YEARLY_TABLE, "year", data)
+
+    def insert_official_monthly_data(self, data: dict) -> bool:
+        row = dict(data)
+        row["source"] = self.MONTHLY_SOURCE_OFFICIAL
+        return self.insert_monthly_data(row)
+
+    def _normalize_monthly_source(self, value: Any) -> str:
+        source = str(value or self.MONTHLY_SOURCE_CALCULATED).strip() or self.MONTHLY_SOURCE_CALCULATED
+        if source not in {self.MONTHLY_SOURCE_CALCULATED, self.MONTHLY_SOURCE_OFFICIAL}:
+            return self.MONTHLY_SOURCE_CALCULATED
+        return source
 
     def get_month_total_usage_before(self, date_text: str) -> float:
         if self.connect is None or self.user_id is None:
@@ -315,6 +328,10 @@ class SqliteDB:
             }
         finally:
             cursor.close()
+
+    def is_official_monthly_bill(self, month: str) -> bool:
+        row = self.get_period_row(self.MONTHLY_TABLE, "month", month)
+        return bool(row and row.get("source") == self.MONTHLY_SOURCE_OFFICIAL)
 
     def _get_daily_month_summary(self, month: str) -> dict[str, Optional[float]] | None:
         if self.connect is None or self.user_id is None:
@@ -592,8 +609,7 @@ class SqliteDB:
             logging.error("Database connection is not established.")
             return False
 
-        existing = self.get_period_row(self.MONTHLY_TABLE, "month", month)
-        if existing and existing.get("source") == "official":
+        if self.is_official_monthly_bill(month):
             logging.info("Skip syncing %s from daily data because official monthly bill already exists.", month)
             return True
 
@@ -627,7 +643,7 @@ class SqliteDB:
                     "flat_usage": self._safe_float(daily_sum[3], default=0.0),
                     "peak_usage": self._safe_float(daily_sum[4], default=0.0),
                     "tip_usage": self._safe_float(daily_sum[5], default=0.0),
-                    "source": "calculated",
+                    "source": self.MONTHLY_SOURCE_CALCULATED,
                 }
             )
         finally:

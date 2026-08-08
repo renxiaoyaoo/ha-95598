@@ -412,8 +412,7 @@ class DataFetcher:
         return any(float(row.get(field, 0.0) or 0.0) > 0 for field in ("valley_usage", "flat_usage", "peak_usage", "tip_usage"))
 
     def _monthly_tou_needs_sync(self, month_key: str) -> bool:
-        existing = self.db.get_period_row("monthly_usage", "month", month_key)
-        return not existing or existing.get("source") != "official"
+        return not self.db.is_official_monthly_bill(month_key)
 
     def _open_bill_detail_by_index(self, driver, bill_index: int):
         month_rows = driver.find_elements(By.XPATH, "//div[contains(@class,'billList_content')]")
@@ -569,7 +568,7 @@ class DataFetcher:
 
             for row in rows:
                 existing = self.db.get_period_row("monthly_usage", "month", row["month"]) or {}
-                self.db.insert_monthly_data(
+                self.db.insert_official_monthly_data(
                     {
                         "month": row["month"],
                         "total_usage": row.get("total_usage") if row.get("total_usage") is not None else existing.get("total_usage", 0.0),
@@ -578,7 +577,6 @@ class DataFetcher:
                         "flat_usage": row.get("flat_usage", 0.0),
                         "peak_usage": row.get("peak_usage", 0.0),
                         "tip_usage": row.get("tip_usage", 0.0),
-                        "source": "official",
                     }
                 )
                 touched_years.add(row["month"][:4])

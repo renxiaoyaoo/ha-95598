@@ -147,7 +147,7 @@ def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
     db = SqliteDB()
     try:
         assert db.connect_user_db("test_user") is True
-        assert db.insert_monthly_data(
+        assert db.insert_official_monthly_data(
             {
                 "month": "2026-07",
                 "total_usage": 576,
@@ -156,7 +156,6 @@ def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
                 "flat_usage": 224,
                 "peak_usage": 186,
                 "tip_usage": 0,
-                "source": "official",
             }
         )
         assert db.insert_daily_data(
@@ -177,7 +176,7 @@ def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
         assert monthly is not None
         assert monthly["total_usage"] == 576.0
         assert monthly["total_charge"] == 298.04
-        assert monthly["source"] == "official"
+        assert monthly["source"] == SqliteDB.MONTHLY_SOURCE_OFFICIAL
     finally:
         os.environ.pop("DB_NAME", None)
 
@@ -206,7 +205,7 @@ def test_sync_monthly_from_daily_creates_calculated_month_when_no_official_bill(
         assert monthly is not None
         assert monthly["total_usage"] == 12.0
         assert monthly["total_charge"] == 5.03
-        assert monthly["source"] == "calculated"
+        assert monthly["source"] == SqliteDB.MONTHLY_SOURCE_CALCULATED
     finally:
         os.environ.pop("DB_NAME", None)
 
