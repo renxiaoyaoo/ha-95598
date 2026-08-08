@@ -52,6 +52,14 @@
 
 详细配置和示例在 [examples/README.md](examples/README.md)。
 
+## 项目地图
+
+- [架构和数据流](docs/ARCHITECTURE.md)
+- [运行机制](docs/RUNTIME.md)
+- [数据模型](docs/DATA_MODEL.md)
+- [隐私说明](docs/PRIVACY.md)
+- [排障指南](docs/TROUBLESHOOTING.md)
+
 ## 功能
 
 - 自动同步国家电网 `95598` 账户数据。
