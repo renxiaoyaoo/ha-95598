@@ -295,15 +295,17 @@ python3.12 -m venv .venv
 
 不建议用 Python `3.13` 安装完整开发依赖；部分固定依赖版本可能没有兼容 wheel。
 
-代码检查：
+常用开发检查：
 
 ```bash
+python3 scripts/tools/config_doctor.py
 python3 scripts/tools/syntax_check.py
 ```
 
 提交前隐私检查：
 
 ```bash
+python3 scripts/tools/config_doctor.py --staged
 python3 scripts/tools/privacy_check.py --staged
 ```
 
@@ -322,6 +324,23 @@ python3 scripts/tools/check_local_tariff.py
 ```
 
 这个命令只输出配置文件名、版本名、月份覆盖和阶梯阈值摘要，不输出 `.env` 内容。私人电价建议放在被 `.gitignore` 忽略的 `config/tou_price_config.local.json`，并通过 `TOU_PRICE_CONFIG` 指向它。
+
+常用工具分类：
+
+| 分类 | 命令 | 用途 |
+| --- | --- | --- |
+| 日常运行 | `docker compose logs -f ha-95598` | 查看服务运行日志 |
+| 诊断 | `python3 scripts/tools/config_doctor.py` | 安全检查隐私、语法和电价配置 |
+| 修复/回填 | `python3 scripts/tools/backfill_ha_energy_statistics.py` | 手动回填 HA 能源面板统计 |
+| 开发检查 | `.venv/bin/python -m pytest -q` | 运行单元测试 |
+
+如果要同时校验 Docker Compose 文件，可以运行：
+
+```bash
+python3 scripts/tools/config_doctor.py --compose
+```
+
+这个命令内部使用 `docker compose config --quiet`，不会打印展开后的 `.env` 配置。
 
 离线回放点选验证码样本：
 
