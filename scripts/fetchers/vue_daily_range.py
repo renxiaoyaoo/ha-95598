@@ -4,6 +4,8 @@ from typing import Any
 
 from selenium.webdriver.common.by import By
 
+from scripts.support.data_rows import DailyUsageRow
+
 
 class VueDailyRangeCollector:
     """Collect daily usage rows by invoking the 95598 daily Vue component."""
@@ -103,14 +105,14 @@ class VueDailyRangeCollector:
         # Keep explicit 0.00 readings, but do not persist this placeholder as real usage.
         if all(cls._is_missing_value(value) for value in usage_values):
             return None
-        return {
-            "date": date_text,
-            "total_usage": cls._safe_float(row.get("total_usage"), 0.0),
-            "valley_usage": cls._safe_float(row.get("valley_usage"), 0.0),
-            "flat_usage": cls._safe_float(row.get("flat_usage"), 0.0),
-            "peak_usage": cls._safe_float(row.get("peak_usage"), 0.0),
-            "tip_usage": cls._safe_float(row.get("tip_usage"), 0.0),
-        }
+        return DailyUsageRow(
+            date=date_text,
+            total_usage=cls._safe_float(row.get("total_usage"), 0.0),
+            valley_usage=cls._safe_float(row.get("valley_usage"), 0.0),
+            flat_usage=cls._safe_float(row.get("flat_usage"), 0.0),
+            peak_usage=cls._safe_float(row.get("peak_usage"), 0.0),
+            tip_usage=cls._safe_float(row.get("tip_usage"), 0.0),
+        ).to_dict()
 
     @staticmethod
     def _is_missing_value(value: Any) -> bool:

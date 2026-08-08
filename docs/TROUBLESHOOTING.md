@@ -39,6 +39,31 @@ python3 -m captcha_solver.tools.replay_point_click --summary-only --newest-first
 
 Captcha samples are stored under `data/captcha_samples/` and must stay private.
 
+## Website Layout Changed
+
+95598 is a website automation target, so page changes can break selectors or Vue-state parsing.
+
+Use the frontend probe when login works but balance, usage, or monthly bills stop parsing:
+
+```bash
+docker compose exec ha-95598 python3 -m scripts.tools.probe_frontend_state
+```
+
+If you already know the target user ID and want to skip user-list parsing:
+
+```bash
+docker compose exec ha-95598 python3 -m scripts.tools.probe_frontend_state --skip-user-list --user-id USER_ID_PLACEHOLDER
+```
+
+The probe writes summaries under `data/pages/`:
+
+- `probe_balance_*`
+- `probe_usage_*`
+- `probe_bill_summary_*`
+- `probe_bill_detail_*`
+
+These files are local diagnostics and can include private page data. Do not commit or share them.
+
 ## No New Daily Data
 
 95598 can delay daily usage, TOU, or charge data. A delayed daily charge is not always a fetch failure.

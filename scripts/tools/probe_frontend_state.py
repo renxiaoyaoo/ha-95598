@@ -23,6 +23,7 @@ from scripts.sensor_updater import SensorUpdater
 from scripts.support.credentials import load_login_credentials
 from scripts.support.error_watcher import ErrorWatcher
 from scripts.support.credentials import mask_user_id
+from scripts.support.probe_report import build_probe_report
 
 
 OUT_DIR = LOCAL_DATA_DIR / "pages"
@@ -131,9 +132,11 @@ def _vue_summary(driver) -> list[dict[str, Any]]:
 def _dump_page(fetcher: DataFetcher, driver, label: str) -> None:
     fetcher.log_page_state(driver, f"probe_{label}")
     selected_data = selected_vue_data(driver)
+    normalized = _normalize_page(label, selected_data)
     _dump_json(OUT_DIR / f"probe_{label}_vue.json", _vue_summary(driver))
     _dump_json(OUT_DIR / f"probe_{label}_data.json", selected_data)
-    _dump_json(OUT_DIR / f"probe_{label}_normalized.json", _normalize_page(label, selected_data))
+    _dump_json(OUT_DIR / f"probe_{label}_normalized.json", normalized)
+    _dump_json(OUT_DIR / f"probe_{label}_report.json", build_probe_report(label, normalized))
     _dump_json(OUT_DIR / f"probe_{label}_network.json", _network_summary(driver))
 
 

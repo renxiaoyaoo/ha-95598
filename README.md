@@ -50,7 +50,7 @@
   </tr>
 </table>
 
-详细配置和示例在 [examples/README.md](examples/README.md)。
+详细仪表盘配置和图表 YAML 在 [examples/README.md](examples/README.md)。
 
 ## 项目地图
 
@@ -63,28 +63,22 @@
 ## 功能
 
 - 自动同步国家电网 `95598` 账户数据。
-- 通过 MQTT Discovery 自动创建设备和实体。
+- 通过 MQTT Discovery 自动创建 Home Assistant 设备和实体。
 - 保存日/月/年历史数据到 SQLite。
-- 提供日用电历史图表数据；日常同步会补最近 `7` 或 `30` 天，数据库已有历史会继续保留，MQTT 日历史实体默认发布最近 `180` 天。
-- 支持按指定日期范围补充日用电量和分时数据。
-- 支持无人值守登录、二维码登录兜底，可选 Telegram 推送登录二维码和数据停更告警。
+- 默认发布最近 `180` 天日历史和最近 `12` 个月月历史。
+- 支持按日期范围补日用电量和分时数据。
+- 支持无人值守登录、二维码兜底、可选 Telegram 通知。
 - 支持可选谷、平、峰、尖分时细项实体。
-- 使用 `Docker + Xvfb + Chromium + Selenium` 运行，尽量贴近真实浏览器环境。
+- 使用 `Docker + Xvfb + Chromium + Selenium` 运行。
 
 ## 适用条件
 
-运行前需要准备：
-
-- 国家电网 `95598` 账号：账号可登录，并且已经绑定户号、能查询电量电费。
-- 系统环境：主要验证环境是 Linux + Docker；macOS / Windows / NAS 等环境只要能运行 Docker，理论上也可以使用，但不是主要验证路径。
-- 运行方式：推荐 Docker / Docker Compose；预构建镜像发布 `linux/amd64` 和 `linux/arm64`。
-- 系统资源：建议至少 `1 GB` 可用内存；使用预构建镜像建议预留 `3 GB+` 磁盘空间，本地构建建议预留 `5 GB+`。
-- Home Assistant：需要启用 MQTT 集成。
-- MQTT Broker：例如 Mosquitto；如果暂时不接 Home Assistant，可以把 `MQTT_HOST` 留空，只写入本地 SQLite。
+- 一个可登录的国家电网 `95598` 账号，且已绑定需要同步的户号。
+- Linux + Docker 环境；其他能运行 Docker 的系统理论可用。
+- Home Assistant MQTT 集成和一个可访问的 MQTT Broker。
+- 至少 `1 GB` 可用内存；预构建镜像建议预留 `3 GB+` 磁盘空间。
 
 ## 快速开始
-
-### Docker Compose
 
 1. 准备配置文件。
 
@@ -99,14 +93,6 @@ ACCOUNT="你的95598账号"
 PASSWORD="你的95598密码"
 MQTT_HOST="你的MQTT地址"
 ```
-
-如果同一批户号绑定了多个 `95598` 登录名，可以使用登录凭据池。程序会在密码登录失败或验证码无法通过时按顺序轮换，全部失败后再进入二维码兜底：
-
-```env
-LOGIN_CREDENTIALS='[{"account":"账号1","password":"密码1","label":"main"},{"account":"账号2","password":"密码2","label":"backup"}]'
-```
-
-只建议把“登录后能看到同一批户号”的账号放进同一个实例。不同户号集合应拆成多个实例运行，避免数据混在一起。
 
 如果暂时不接 Home Assistant，可以留空：
 
@@ -130,110 +116,46 @@ docker compose up -d --build ha-95598
 docker compose logs -f ha-95598
 ```
 
-### Home Assistant Add-on
-
-Home Assistant OS / Supervised 用户可以使用 add-on 方式安装，详细说明见 [addon/ha-95598/README.md](addon/ha-95598/README.md)。
+Home Assistant OS / Supervised 用户也可以使用 add-on，说明见 [addon/ha-95598/README.md](addon/ha-95598/README.md)。
 
 ## 配置
 
-主要配置都在 [example.env](example.env)，复制成 `.env` 后按注释修改。
+主要配置在 [example.env](example.env)，最小 placeholder 示例在 [.env.example](.env.example)。
 
-你可以配置这些内容：
+常用配置：
 
-- `95598` 登录账号、密码、登录凭据池，以及需要忽略的户号。
-- Home Assistant / MQTT 发布地址、端口和认证信息。
-- 每天同步次数、开始时间、失败重试次数和页面等待时间。
-- 每次同步最近 `7` 天或 `30` 天日用电数据。
-- 是否额外发布谷、平、峰、尖分时细项实体。
-- 页面截图、错误快照和验证码调试图片保留天数。
-- 是否启用无人值守登录、二维码兜底，以及二维码过期后是否自动刷新重发。
-- 是否启用 Telegram 通知，当前用于推送登录二维码和数据停更告警。
+| 配置 | 说明 |
+| --- | --- |
+| `ACCOUNT` / `PASSWORD` | 95598 登录账号和密码 |
+| `LOGIN_CREDENTIALS` | 可选登录凭据池 |
+| `IGNORE_USER_ID` | 可选忽略指定户号 |
+| `MQTT_HOST` / `MQTT_PORT` | MQTT Broker |
+| `JOB_START_TIME` / `JOB_TIMES` | 每天同步时间和次数 |
+| `DAILY_USAGE_WINDOW_DAYS` | 每次同步最近 `7` 或 `30` 天 |
+| `PUBLISH_TOU_DETAIL_SENSORS` | 是否发布分时细项实体 |
+| `TOU_PRICE_CONFIG` | 私人电价配置路径 |
+| `HA_ENERGY_BACKFILL_ENABLED` | 是否启用 HA 能源面板 recorder 回填 |
+| `NOTIFIER` | 通知器，当前支持 `none` / `telegram` |
 
 > [!IMPORTANT]
-> 日电费是按 [tou_price_config.json](config/tou_price_config.json) 估算的。
-> 默认配置是湖南居民阶梯电价示例，不一定适合你的地区。
-> 使用前请按本地电价调整；也可以通过 `TOU_PRICE_CONFIG` 指定自己的配置文件。
+> 日电费会按电价配置估算。仓库默认电价只是示例，不一定适合你的地区。私人电价建议放在被 `.gitignore` 忽略的 `config/tou_price_config.local.json`，并通过 `TOU_PRICE_CONFIG` 指向它。
 
 ## Home Assistant
 
 程序通过 MQTT Discovery 自动创建设备和实体，不需要手动写 `configuration.yaml`。
 
-默认实体：
+默认实体包括：
 
-| 显示名 | 实体 ID |
-| --- | --- |
-| 电费余额 | `sensor.electricity_charge_balance_xxxx` |
-| 最新日电量 | `sensor.last_electricity_usage_xxxx` |
-| 最新日电费 | `sensor.last_electricity_charge_xxxx` |
-| 总用电量 | `sensor.total_electricity_usage_xxxx` |
-| 总电费 | `sensor.total_electricity_charge_xxxx` |
-| 日用电历史 | `sensor.daily_electricity_history_xxxx` |
-| 月用电历史 | `sensor.monthly_electricity_history_xxxx` |
-| 本月电量 | `sensor.month_electricity_usage_xxxx` |
-| 本月电费 | `sensor.month_electricity_charge_xxxx` |
-| 本年电量 | `sensor.yearly_electricity_usage_xxxx` |
-| 本年电费 | `sensor.yearly_electricity_charge_xxxx` |
+- 电费余额
+- 最新日电量、最新日电费
+- 总用电量、总电费
+- 日用电历史、月用电历史
+- 本月电量、本月电费
+- 本年电量、本年电费
 
-其中 `xxxx` 是户号后四位。Home Assistant 可能会在实体 ID 冲突时自动追加后缀，请以实际生成的实体 ID 为准。
-设备名显示为 `95598-xxxx`。如果你之前已经创建过旧实体，HA 里的 `entity_id` 可能不会自动改名，需要删除旧实体后重新发现。
-`sensor.daily_electricity_history_xxxx` 的属性里会发布最近 `180` 天的本地日历史序列，序列包含日期、电量和电费。
-`sensor.monthly_electricity_history_xxxx` 的属性里会发布最近 `12` 个月的本地月历史序列，序列包含电量、电费和分时电量。
+实体 ID 通常以户号后四位结尾，例如 `sensor.daily_electricity_history_xxxx`。Home Assistant 可能会在冲突时追加额外后缀，请以实际生成结果为准。
 
-这两个历史实体主要用于仪表盘图表，属性较大，建议从 Home Assistant recorder 排除，避免 HA 数据库长期膨胀：
-
-```yaml
-recorder:
-  exclude:
-    entities:
-      - sensor.daily_electricity_history_xxxx
-      - sensor.monthly_electricity_history_xxxx
-```
-
-分时细项默认不发布。需要谷、平、峰、尖实体时，设置：
-
-```env
-PUBLISH_TOU_DETAIL_SENSORS=true
-```
-
-开启后会额外发布：
-
-| 数据 | 实体 ID |
-| --- | --- |
-| 最新日谷/平/峰/尖电量 | `sensor.last_valley_electricity_usage_xxxx` / `sensor.last_flat_electricity_usage_xxxx` / `sensor.last_peak_electricity_usage_xxxx` / `sensor.last_tip_electricity_usage_xxxx` |
-| 本月谷/平/峰/尖电量 | `sensor.month_valley_electricity_usage_xxxx` / `sensor.month_flat_electricity_usage_xxxx` / `sensor.month_peak_electricity_usage_xxxx` / `sensor.month_tip_electricity_usage_xxxx` |
-| 本年谷/平/峰/尖电量 | `sensor.yearly_valley_electricity_usage_xxxx` / `sensor.yearly_flat_electricity_usage_xxxx` / `sensor.yearly_peak_electricity_usage_xxxx` / `sensor.yearly_tip_electricity_usage_xxxx` |
-
-详细的 Home Assistant 能源面板配置、日用电图表 YAML 和效果图都放在 [examples/README.md](examples/README.md)。
-
-### 能源面板日期修正
-
-Home Assistant 能源面板读取的是 recorder long-term statistics，不是实体属性里的日历史。普通 MQTT 发布只能更新“当前总量”：如果程序停更几天后一次补到多天数据，HA 可能会把这几天的差额全部记到补抓当天。
-
-需要能源面板也按真实日期显示时，可以开启 recorder 回填。开启后，每次抓取成功都会根据本地 SQLite 的 `daily_usage` 重建总电量和总电费的每日累计点，并写入 HA recorder statistics。
-
-1. 在 compose 里挂载 Home Assistant 配置目录。
-
-```yaml
-volumes:
-  - ./data:/app/data
-  - ./config:/app/config:ro
-  - /你的/home-assistant/config:/ha-config
-```
-
-2. 在 `.env` 中启用。
-
-```env
-HA_ENERGY_BACKFILL_ENABLED=true
-HA_RECORDER_DB_PATH=/ha-config/home-assistant_v2.db
-```
-
-首次开启建议同时设置：
-
-```env
-HA_ENERGY_BACKFILL_BACKUP=true
-```
-
-确认能源面板显示正常后，可以把备份关闭，避免每天产生数据库备份文件。更多可选项见 [example.env](example.env) 中的“Home Assistant 能源面板日期修正”。
+历史实体属性较大，建议从 Home Assistant recorder 排除，避免 HA 数据库长期膨胀。详细实体说明、Energy 面板配置和图表 YAML 见 [examples/README.md](examples/README.md)。
 
 ## 数据和文件
 
@@ -245,7 +167,18 @@ HA_ENERGY_BACKFILL_BACKUP=true
 | `ha_95598_cache.json` | 当前状态和同步进度 |
 | `ha_95598_session.json` | 登录会话 |
 | `pages/` | 页面追踪和错误快照 |
+| `captcha_samples/` | 验证码学习样本 |
 | `login_qr_code.png` | 二维码登录临时文件 |
+
+这些文件可能包含隐私数据，不要提交或分享。更多说明见 [docs/PRIVACY.md](docs/PRIVACY.md)。
+
+## 常用命令
+
+查看日志：
+
+```bash
+docker compose logs -f ha-95598
+```
 
 查看本地数据摘要：
 
@@ -253,21 +186,26 @@ HA_ENERGY_BACKFILL_BACKUP=true
 docker compose run --rm ha-95598 python3 -m scripts.show_db
 ```
 
-本地开发环境也可以运行：
-
-```bash
-.venv/bin/python -m scripts.show_db
-```
-
-需要排查缓存状态时可以加 `--details`，数据库明细不会直接打印。
-
-按日期范围补充日用电数据：
+按日期范围补日数据：
 
 ```bash
 docker compose run --rm ha-95598 python3 -m scripts.fetch_daily_range --start 2026-01-01 --end 2026-01-31
 ```
 
-这个命令会复用同一套登录流程，抓取指定日期范围内的日用电量和谷、平、峰、尖分时数据，计算日电费后写入 SQLite，并刷新 Home Assistant 的日历史和汇总实体。它和日常定时同步是并列入口，不会改写当天同步进度。
+安全诊断：
+
+```bash
+python3 scripts/tools/config_doctor.py
+```
+
+提交前检查：
+
+```bash
+python3 scripts/tools/privacy_check.py
+python3 scripts/tools/privacy_check.py --staged
+python3 scripts/tools/syntax_check.py
+.venv/bin/python -m pytest -q
+```
 
 ## 更新
 
@@ -285,7 +223,7 @@ git pull
 docker compose up -d --build ha-95598
 ```
 
-## 开发和测试
+## 开发
 
 开发模式会把整个仓库挂载进容器，改 Python 代码后重启容器即可。
 
@@ -294,110 +232,22 @@ docker compose -f docker-compose.dev.yml up -d --build ha-95598
 docker compose -f docker-compose.dev.yml logs -f ha-95598
 ```
 
-本地运行测试建议使用 Python `3.12`，和 Docker 镜像保持一致：
+本地运行测试建议使用 Python `3.12`：
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-```
-
-不建议用 Python `3.13` 安装完整开发依赖；部分固定依赖版本可能没有兼容 wheel。
-
-常用开发检查：
-
-```bash
-python3 scripts/tools/config_doctor.py
-python3 scripts/tools/syntax_check.py
-```
-
-提交前隐私检查：
-
-```bash
-python3 scripts/tools/config_doctor.py --staged
-python3 scripts/tools/privacy_check.py --staged
-```
-
-单元测试：
-
-```bash
 .venv/bin/python -m pytest -q
 ```
 
-测试只收集 `tests/`，运行态 `data/` 目录不会被 pytest 扫描。
-
-校验当前启用的本地电价配置：
-
-```bash
-python3 scripts/tools/check_local_tariff.py
-```
-
-这个命令只输出配置文件名、版本名、月份覆盖和阶梯阈值摘要，不输出 `.env` 内容。私人电价建议放在被 `.gitignore` 忽略的 `config/tou_price_config.local.json`，并通过 `TOU_PRICE_CONFIG` 指向它。
-
-常用工具分类：
-
-| 分类 | 命令 | 用途 |
-| --- | --- | --- |
-| 日常运行 | `docker compose logs -f ha-95598` | 查看服务运行日志 |
-| 诊断 | `python3 scripts/tools/config_doctor.py` | 安全检查隐私、语法和电价配置 |
-| 修复/回填 | `python3 scripts/tools/backfill_ha_energy_statistics.py` | 手动回填 HA 能源面板统计 |
-| 开发检查 | `.venv/bin/python -m pytest -q` | 运行单元测试 |
-
-如果要同时校验 Docker Compose 文件，可以运行：
-
-```bash
-python3 scripts/tools/config_doctor.py --compose
-```
-
-这个命令内部使用 `docker compose config --quiet`，不会打印展开后的 `.env` 配置。
-
-离线回放点选验证码样本：
-
-```bash
-python3 -m captcha_solver.tools.replay_point_click --summary-only
-```
-
-程序在线遇到点选验证码时，会在 `data/pages/` 保存 `tencent_point_click_answer_*.png`、`tencent_point_click_bg_*.png` 和 `tencent_point_click_report_*.json`。后续调算法时优先用这些样本离线回放，避免频繁线上登录触发风控。
-`data/captcha_samples/` 下的验证码学习样本和回放报告会自动清理，默认保留最近 `14` 天；需要调整时见 [example.env](example.env) 中的验证码保留配置。
-
 ## 常见问题
 
-### 没有 MQTT Broker 能不能用
+常见排障见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
 
-可以。
+简要原则：
 
-把 `MQTT_HOST` 留空，程序会同步数据并写入 SQLite，但不会在 Home Assistant 中创建设备和实体。
-
-### 二维码在哪里
-
-如果触发二维码登录，图片会保存到：
-
-```text
-data/login_qr_code.png
-```
-
-启用 Telegram 通知后，也可以推送二维码提醒。
-
-### Telegram 会推送什么
-
-当前 Telegram 通知只做两件事：
-
-- 登录需要扫码时，推送登录二维码。
-- 最新日电量日期落后超过 `STALE_DATA_ALERT_DAYS` 时，推送数据停更告警。
-
-它不会推送余额不足、每日账单摘要或每次同步成功通知。
-
-如果当前网络无法直连 `api.telegram.org`，可以在 `.env` 里配置 `TG_API_BASE_URL` 为你的 Telegram API 反代地址，例如：
-
-```env
-TG_API_BASE_URL="https://tg-api.example.com"
-```
-
-### 点选验证码能不能稳定通过
-
-不能保证。
-
-点选验证码是 best-effort 方案，当前会尽量按图形轮廓和相似度去匹配；但题型、背景和风控策略会变化，所以成功率不是固定值。低置信时程序会主动刷新验证码，必要时会回退到二维码登录。
-
-### 为什么镜像比较大
-
-当前镜像包含完整 Chromium、chromedriver、Xvfb、中文字体和验证码识别依赖。这样做的目标是让 Docker 内浏览器更接近真实桌面环境，减少登录阶段被风控误判的概率。
+- 没有 MQTT Broker 也能运行，只是不发布 HA 实体。
+- 二维码登录图片只保存在本地 `data/login_qr_code.png`。
+- Telegram 只用于登录二维码和数据停更告警。
+- 95598 网站可能延迟更新日数据或账单，这不一定是抓取失败。
+- Selenium 网页自动化依赖 95598 当前页面结构，官网改版后可能需要维护选择器。
