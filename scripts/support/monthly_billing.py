@@ -5,6 +5,8 @@ import re
 from datetime import datetime
 from typing import Any, Iterable
 
+from scripts.support.data_rows import MonthlyBillRow, MonthlyUsageRow
+
 
 class MonthlyBillingService:
     def __init__(self, db) -> None:
@@ -34,15 +36,15 @@ class MonthlyBillingService:
         month_key = self.normalize_month_value(month, reference_year)
         existing_tou = self.db.get_period_tou_values("monthly_usage", "month", month_key)
         self.db.insert_monthly_data(
-            {
-                "month": month_key,
-                "total_usage": total_usage,
-                "total_charge": total_charge,
-                "valley_usage": existing_tou.get("valley_usage", 0.0),
-                "flat_usage": existing_tou.get("flat_usage", 0.0),
-                "peak_usage": existing_tou.get("peak_usage", 0.0),
-                "tip_usage": existing_tou.get("tip_usage", 0.0),
-            }
+            MonthlyUsageRow(
+                month=month_key,
+                total_usage=total_usage,
+                total_charge=total_charge,
+                valley_usage=existing_tou.get("valley_usage", 0.0),
+                flat_usage=existing_tou.get("flat_usage", 0.0),
+                peak_usage=existing_tou.get("peak_usage", 0.0),
+                tip_usage=existing_tou.get("tip_usage", 0.0),
+            ).to_dict()
         )
         return month_key
 
@@ -50,19 +52,19 @@ class MonthlyBillingService:
         month_key = str(row["month"]).strip()
         existing = self.db.get_period_row("monthly_usage", "month", month_key) or {}
         self.db.upsert_official_monthly_bill(
-            {
-                "month": month_key,
-                "total_usage": row.get("total_usage")
+            MonthlyBillRow(
+                month=month_key,
+                total_usage=row.get("total_usage")
                 if row.get("total_usage") is not None
                 else existing.get("total_usage", 0.0),
-                "total_charge": row.get("total_charge")
+                total_charge=row.get("total_charge")
                 if row.get("total_charge") is not None
                 else existing.get("total_charge"),
-                "valley_usage": row.get("valley_usage", 0.0),
-                "flat_usage": row.get("flat_usage", 0.0),
-                "peak_usage": row.get("peak_usage", 0.0),
-                "tip_usage": row.get("tip_usage", 0.0),
-            }
+                valley_usage=row.get("valley_usage", 0.0),
+                flat_usage=row.get("flat_usage", 0.0),
+                peak_usage=row.get("peak_usage", 0.0),
+                tip_usage=row.get("tip_usage", 0.0),
+            ).to_official_dict()
         )
         return month_key
 

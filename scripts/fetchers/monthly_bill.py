@@ -9,6 +9,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from scripts.const import ELECTRIC_BILL_SUMMARY_URL
 from scripts.fetchers.vue_state import normalize_bill_detail, selected_vue_data
+from scripts.support.data_rows import MonthlyBillRow
 from scripts.support.monthly_billing import MonthlyBillingService
 
 
@@ -179,15 +180,15 @@ class MonthlyBillFetcher:
         try:
             detail = normalize_bill_detail(selected_vue_data(driver))
             if detail.get("month"):
-                return {
-                    "month": detail.get("month"),
-                    "total_usage": detail.get("usage"),
-                    "total_charge": detail.get("charge"),
-                    "valley_usage": detail.get("valley_usage") or 0.0,
-                    "flat_usage": detail.get("flat_usage") or 0.0,
-                    "peak_usage": detail.get("peak_usage") or 0.0,
-                    "tip_usage": detail.get("tip_usage") or 0.0,
-                }
+                return MonthlyBillRow(
+                    month=detail.get("month"),
+                    total_usage=detail.get("usage"),
+                    total_charge=detail.get("charge"),
+                    valley_usage=detail.get("valley_usage") or 0.0,
+                    flat_usage=detail.get("flat_usage") or 0.0,
+                    peak_usage=detail.get("peak_usage") or 0.0,
+                    tip_usage=detail.get("tip_usage") or 0.0,
+                ).to_official_dict()
         except Exception as exc:
             logging.debug("Failed to parse monthly bill detail from Vue state, fallback to DOM: %s", exc)
 
@@ -202,12 +203,12 @@ class MonthlyBillFetcher:
             if total_usage is None:
                 total_usage = round(sum(tou_values.values()), 2)
 
-            return {
-                "month": month_key,
-                "total_usage": total_usage,
-                "total_charge": self._read_total_charge(driver),
+            return MonthlyBillRow(
+                month=month_key,
+                total_usage=total_usage,
+                total_charge=self._read_total_charge(driver),
                 **tou_values,
-            }
+            ).to_official_dict()
         except Exception as exc:
             logging.warning("Failed to parse monthly bill detail: %s", exc)
             return None
