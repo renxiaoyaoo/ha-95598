@@ -1,16 +1,15 @@
 import logging
 import os
-import re
 import time
 from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from scripts.fetchers.vue_state import (
-    normalize_balance,
     normalize_usage,
     selected_vue_data,
 )
+from scripts.fetchers.balance import BalanceFetcher
 from scripts.fetchers.monthly_bill import MonthlyBillFetcher
 from scripts.pages.usage_page import UsagePage
 from scripts.sensor_updater import SensorUpdater
@@ -89,6 +88,7 @@ class DataFetcher:
             step_sleep=self._step_sleep,
         )
         self._init_db()
+        self.balance_fetcher = BalanceFetcher()
         self.monthly_bill_fetcher = MonthlyBillFetcher(
             db=self.db,
             driver_wait_time=self.DRIVER_IMPLICITY_WAIT_TIME,
@@ -566,40 +566,7 @@ class DataFetcher:
         )
 
     def _get_electric_balance(self, driver):
-        try:
-            balance = normalize_balance(selected_vue_data(driver)).get("balance")
-            if balance is not None:
-                logging.info("Read electricity balance from Vue state: %s CNY", balance)
-                return balance
-        except Exception as exc:
-            logging.debug("Failed to read balance from Vue state, fallback to DOM: %s", exc)
-
-        try:
-            try:
-                # 定位是否有"应交金额"标题（确认是后缴费账户）
-                title_text = driver.find_element(By.XPATH, "//p[contains(@class, 'balance_title') and contains(text(), '应交金额')]").text
-                if "应交金额" in title_text:
-                    # 后缴费账户：需要查找"账户余额"，而不是"应交金额"
-                    # 查找包含"账户余额"的balance_title元素，然后获取其内部的金额
-                    balance_content = driver.find_element(By.XPATH, "//p[contains(@class, 'balance_title') and contains(text(), '账户余额')]")
-                    # 提取数字部分
-                    balance_text = re.sub(r'[^\d.]', '', balance_content.text)
-                    if balance_text:
-                        return float(balance_text)
-            except Exception as e:
-                # 后缴费账户解析失败，继续尝试预缴费账户逻辑
-                pass
-
-            # 2. 预缴费账户的"账户余额"（原逻辑）
-            balance_text = driver.find_element(By.CLASS_NAME, "cff8").text
-            balance = balance_text.replace("元", "")
-            if "欠费" in balance_text:
-                return -float(balance)
-            else:
-                return float(balance)
-        except Exception as e:
-            logging.error(f"Failed to get balance: {e}")
-            return None
+        return self.balance_fetcher.get_balance(driver)
 
     def _get_yearly_data(self, driver, target_year=None):
 
