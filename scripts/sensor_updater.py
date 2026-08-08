@@ -10,6 +10,7 @@ import paho.mqtt.client as mqtt
 from scripts.support.cache_store import CacheStore
 from scripts.support.credentials import mask_user_id
 from scripts.support.db import SqliteDB
+from scripts.support.fetch_progress import FETCH_STAGES as ALL_FETCH_STAGES
 from scripts.support.ha_payloads import HistoryPayloadBuilder
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
@@ -50,7 +51,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 class SensorUpdater:
-    FETCH_STAGES = ("none", "balance", "yearly", "monthly", "daily", "tou", "persist", "billing", "complete")
+    FETCH_STAGES = ALL_FETCH_STAGES
 
     def __init__(self):
         self.mqtt_host = os.getenv("MQTT_HOST", "").strip()

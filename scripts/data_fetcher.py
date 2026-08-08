@@ -13,6 +13,7 @@ from scripts.sensor_updater import SensorUpdater
 from scripts.support.browser_factory import create_chromium_driver
 from scripts.support.data_persister import DataPersister
 from scripts.support.error_watcher import ErrorWatcher
+from scripts.support.fetch_progress import has_completed_stage
 from typing import Optional
 from scripts.support.page_tracer import PageTracer
 from scripts.support.session_manager import SessionManager
@@ -133,19 +134,7 @@ class DataFetcher:
         return (progress or {}).get("fetch_date") == self._progress_date()
 
     def _has_completed_stage(self, progress: dict, stage: str) -> bool:
-        stage_order = {
-            "none": 0,
-            "balance": 1,
-            "yearly": 2,
-            "monthly": 3,
-            "daily": 4,
-            "tou": 5,
-            "persist": 6,
-            "billing": 7,
-            "complete": 8,
-        }
-        current_stage = (progress or {}).get("stage", "none")
-        return stage_order.get(current_stage, 0) >= stage_order.get(stage, 0)
+        return has_completed_stage(progress, stage)
 
     def _known_user_ids_from_local_state(self, updater) -> list[str]:
         user_ids: list[str] = []

@@ -3,10 +3,11 @@ import logging
 from scripts.support.credentials import mask_user_id
 from datetime import datetime
 from pathlib import Path
+from scripts.support.fetch_progress import FETCH_STAGES as ALL_FETCH_STAGES, is_progress_complete
 
 
 class CacheStore:
-    FETCH_STAGES = ("none", "balance", "yearly", "monthly", "daily", "tou", "persist", "billing", "complete")
+    FETCH_STAGES = ALL_FETCH_STAGES
 
     def __init__(self, cache_file: Path):
         self.cache_file = cache_file
@@ -76,7 +77,7 @@ class CacheStore:
 
     @staticmethod
     def is_progress_complete(progress: dict) -> bool:
-        return isinstance(progress, dict) and progress.get("stage") == "complete"
+        return is_progress_complete(progress)
 
     def should_skip_startup_fetch(self) -> bool:
         data = self.load()
