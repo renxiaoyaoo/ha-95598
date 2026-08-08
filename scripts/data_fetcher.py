@@ -21,6 +21,7 @@ from scripts.support.login_manager import LoginManager
 from scripts.support.ha95598_navigator import Ha95598Navigator
 from scripts.support.ha_energy_backfiller import HaEnergyStatisticsBackfiller
 from scripts.support.user_ids import resolve_user_ids
+from scripts.support.fetch_workflow import FetchWorkflow
 
 from scripts.const import BALANCE_URL
 
@@ -99,6 +100,7 @@ class DataFetcher:
         )
         self.data_persister = DataPersister(self.db, self.tou_price_resolver)
         self.ha_energy_backfiller = HaEnergyStatisticsBackfiller(self.db.db_path) if self.db is not None else None
+        self.fetch_workflow = FetchWorkflow(self)
 
     def _init_db(self):
         self.db_type = os.getenv("DB_TYPE", "sqlite").lower()
@@ -337,214 +339,7 @@ class DataFetcher:
         return self.usage_fetcher.select_usage_year(driver, target_year)
 
     def _get_all_data(self, driver, user_id, userid_index, updater: SensorUpdater):
-        progress = updater.get_progress(user_id)
-        cached = updater.get_cached_user_data(user_id)
-        if not self._is_progress_current(progress):
-            updater.update_progress_stage(user_id, "none", fetch_date=self._progress_date())
-            progress = updater.get_progress(user_id)
-            cached = updater.get_cached_user_data(user_id)
-
-        cached_balance = cached.get("balance")
-        balance = cached_balance
-        if self._has_completed_stage(progress, "balance"):
-            logging.info("Skip balance fetch for %s because today's progress already exists.", mask_user_id(user_id))
-        else:
-            fetched_balance = self._get_electric_balance(driver)
-            if fetched_balance is None:
-                if cached_balance is None:
-                    logging.warning("Get electricity charge balance for %s failed, no cached balance available.", mask_user_id(user_id))
-                else:
-                    logging.warning("Get electricity charge balance for %s failed, keep cached balance.", mask_user_id(user_id))
-            else:
-                balance = fetched_balance
-                logging.info(
-                    f"Get electricity charge balance for {mask_user_id(user_id)} successfully, balance is {balance} CNY.")
-                updater.save_partial_data(user_id, balance=balance)
-                updater.update_progress_stage(user_id, "balance", fetch_date=self._progress_date())
-                progress = updater.get_progress(user_id)
-        #time.sleep(self.RETRY_WAIT_TIME_OFFSET_UNIT)
-        # swithc to electricity usage page
-        self.usage_page.open_for_user(driver, user_id, userid_index)
-        # get data for each user id
-        yearly_usage = cached.get("yearly_usage")
-        yearly_charge = cached.get("yearly_charge")
-        if self._has_completed_stage(progress, "yearly"):
-            logging.info("Skip yearly fetch for %s because today's progress already exists.", mask_user_id(user_id))
-        else:
-            yearly_usage, yearly_charge = self._get_yearly_data(driver)
-
-            if yearly_usage is None:
-                logging.error(f"Get year power usage for {mask_user_id(user_id)} failed, pass")
-            else:
-                logging.info(
-                    f"Get year power usage for {mask_user_id(user_id)} successfully, usage is {yearly_usage} kwh")
-            if yearly_charge is None:
-                logging.error(f"Get year power charge for {mask_user_id(user_id)} failed, pass")
-            else:
-                logging.info(
-                    f"Get year power charge for {mask_user_id(user_id)} successfully, yealrly charge is {yearly_charge} CNY")
-            updater.save_partial_data(user_id, yearly_usage=yearly_usage, yearly_charge=yearly_charge)
-            updater.update_progress_stage(user_id, "yearly", fetch_date=self._progress_date())
-            progress = updater.get_progress(user_id)
-
-        # 按月获取数据
-        month = None
-        month_usage = None
-        month_charge = None
-        if self._has_completed_stage(progress, "monthly"):
-            logging.info("Skip monthly fetch for %s because today's progress already exists.", mask_user_id(user_id))
-            if cached.get("month_usage") is not None:
-                month_usage = [cached.get("month_usage")]
-            if cached.get("month_charge") is not None:
-                month_charge = [cached.get("month_charge")]
-        else:
-            month, month_usage, month_charge = self._get_month_usage(driver)
-            if month is None:
-                logging.error(f"Get month power usage for {mask_user_id(user_id)} failed, pass")
-            else:
-                for m in range(len(month)):
-                    logging.info(f"Get month power charge for {mask_user_id(user_id)} successfully, {month[m]} usage is {month_usage[m]} KWh, charge is {month_charge[m]} CNY.")
-                updater.save_partial_data(
-                    user_id,
-                    month_usage=month_usage[-1] if month_usage else None,
-                    month_charge=month_charge[-1] if month_charge else None,
-                )
-                updater.update_progress_stage(user_id, "monthly", fetch_date=self._progress_date())
-                progress = updater.get_progress(user_id)
-        # get yesterday usage
-        last_daily_date = cached.get("last_daily_date")
-        last_daily_usage = cached.get("last_daily_usage")
-        if self._has_completed_stage(progress, "daily"):
-            logging.info("Skip daily fetch for %s because today's progress already exists.", mask_user_id(user_id))
-        else:
-            last_daily_date, last_daily_usage = self._get_yesterday_usage(driver)
-            if last_daily_usage is None:
-                logging.error(f"Get daily power consumption for {mask_user_id(user_id)} failed, pass")
-            else:
-                logging.info(
-                    f"Get daily power consumption for {mask_user_id(user_id)} successfully, , {last_daily_date} usage is {last_daily_usage} kwh.")
-                updater.save_partial_data(
-                    user_id,
-                    last_daily_date=last_daily_date,
-                    last_daily_usage=last_daily_usage,
-                )
-                updater.update_progress_stage(user_id, "daily", fetch_date=self._progress_date())
-                progress = updater.get_progress(user_id)
-        valley_usage = cached.get("valley_usage")
-        flat_usage = cached.get("flat_usage")
-        peak_usage = cached.get("peak_usage")
-        tip_usage = cached.get("tip_usage")
-        daily_tou_map = {}
-        if self._has_completed_stage(progress, "tou"):
-            logging.info("Skip TOU fetch for %s because today's progress already exists.", mask_user_id(user_id))
-        else:
-            daily_tou_map = self._get_recent_daily_usage_breakdown_map(driver, limit_days=7)
-            latest_tou = daily_tou_map.get(last_daily_date) if last_daily_date else None
-            if latest_tou:
-                valley_usage = latest_tou.get("valley_usage")
-                flat_usage = latest_tou.get("flat_usage")
-                peak_usage = latest_tou.get("peak_usage")
-                tip_usage = latest_tou.get("tip_usage")
-            else:
-                valley_usage, flat_usage, peak_usage, tip_usage = self._get_latest_daily_usage_breakdown(driver)
-                if last_daily_date and any(value is not None for value in (valley_usage, flat_usage, peak_usage, tip_usage)):
-                    daily_tou_map[last_daily_date] = {
-                        "valley_usage": valley_usage or 0.0,
-                        "flat_usage": flat_usage or 0.0,
-                        "peak_usage": peak_usage or 0.0,
-                        "tip_usage": tip_usage or 0.0,
-                    }
-
-            if daily_tou_map or any(value is not None for value in (valley_usage, flat_usage, peak_usage, tip_usage)):
-                logging.info(
-                    f"Get recent time-of-use power usage for {mask_user_id(user_id)} successfully, latest valley={valley_usage} KWh, flat={flat_usage} KWh, peak={peak_usage} KWh, tip={tip_usage} KWh, days={len(daily_tou_map)}."
-                )
-                updater.save_partial_data(
-                    user_id,
-                    valley_usage=valley_usage,
-                    flat_usage=flat_usage,
-                    peak_usage=peak_usage,
-                    tip_usage=tip_usage,
-                )
-                updater.update_progress_stage(user_id, "tou", fetch_date=self._progress_date())
-                progress = updater.get_progress(user_id)
-            else:
-                logging.error(f"Get latest time-of-use power usage for {mask_user_id(user_id)} failed, pass")
-
-        last_daily_charge = None
-
-        # 新增储存用电量
-        if self.db is not None:
-            # 将数据存储到数据库
-            logging.info(f"db is {self.db_type}, we will store the data to the database.")
-            # 按天获取数据 7天/30天
-            date, usages = self._get_daily_usage_data(driver)
-            last_daily_charge = self._save_user_data(
-                user_id,
-                last_daily_date,
-                last_daily_usage,
-                last_daily_charge,
-                date,
-                usages,
-                month,
-                month_usage,
-                month_charge,
-                yearly_charge,
-                yearly_usage,
-                valley_usage,
-                flat_usage,
-                peak_usage,
-                tip_usage,
-                daily_tou_map,
-            )
-            updater.save_partial_data(user_id, last_daily_charge=last_daily_charge)
-            updater.update_progress_stage(user_id, "persist", fetch_date=self._progress_date())
-            progress = updater.get_progress(user_id)
-        else:
-            logging.info("db is None, we will not store the data to the database.")
-
-        if self.db is not None:
-            if self._has_completed_stage(progress, "billing"):
-                logging.info("Skip monthly billing TOU fetch for %s because today's progress already exists.", mask_user_id(user_id))
-            else:
-                bill_rows, bill_verified = self._sync_monthly_bill_tou(driver, user_id)
-                if bill_rows:
-                    months = ", ".join(row["month"] for row in bill_rows)
-                    logging.info("Synced monthly bill TOU for %s: %s", mask_user_id(user_id), months)
-                elif bill_verified:
-                    logging.info("Monthly bill TOU check completed for %s with no new data.", mask_user_id(user_id))
-                else:
-                    logging.warning("Monthly bill TOU check did not complete for %s", mask_user_id(user_id))
-                if bill_verified:
-                    updater.update_progress_stage(user_id, "billing", fetch_date=self._progress_date())
-                    progress = updater.get_progress(user_id)
-
-        if self.db is None or self._has_completed_stage(progress, "billing"):
-            updater.update_progress_stage(user_id, "complete", fetch_date=self._progress_date())
-
-        if month_charge:
-            month_charge = month_charge[-1]
-        else:
-            month_charge = None
-        if month_usage:
-            month_usage = month_usage[-1]
-        else:
-            month_usage = None
-
-        return (
-            balance,
-            last_daily_date,
-            last_daily_usage,
-            last_daily_charge,
-            yearly_charge,
-            yearly_usage,
-            month_charge,
-            month_usage,
-            valley_usage,
-            flat_usage,
-            peak_usage,
-            tip_usage,
-        )
+        return self.fetch_workflow.run(driver, user_id, userid_index, updater)
 
     def _get_electric_balance(self, driver):
         return self.balance_fetcher.get_balance(driver)
