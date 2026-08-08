@@ -1,4 +1,18 @@
-from scripts.support.ha_payloads import HistoryPayloadBuilder
+from scripts.support.ha_payloads import HaSensorPayload, HistoryPayloadBuilder
+
+
+def test_ha_sensor_payload_converts_to_legacy_dict_shape():
+    payload = HaSensorPayload(
+        state=1.23,
+        attributes={"latest_date": "2026-08-06"},
+        log={"series_days": 1},
+    )
+
+    assert payload.to_dict() == {
+        "state": 1.23,
+        "attributes": {"latest_date": "2026-08-06"},
+        "log": {"series_days": 1},
+    }
 
 
 def test_daily_history_payload_keeps_state_and_series_attributes():
