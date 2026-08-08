@@ -2,6 +2,8 @@
 
 The local database is SQLite. It stores history for each 95598 user ID and is the source for long history MQTT payloads.
 
+Runtime cache data is normalized through small typed models before it is republished to MQTT. This keeps the cache file flexible while avoiding raw dict handling in the main publisher.
+
 ## Tables
 
 ### `daily_usage`

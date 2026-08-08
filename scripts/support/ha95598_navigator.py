@@ -7,6 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
 from scripts.const import BALANCE_URL, HOME_URL, LOGIN_URL
+from scripts.pages import navigator_selectors as selectors
 
 
 class Ha95598Navigator:
@@ -87,8 +88,8 @@ class Ha95598Navigator:
                 self._step_sleep(driver, "after_relogin_open_home")
             self._click_my_page(driver, "after_reclick_my_page")
         WebDriverWait(driver, self.driver_wait_time).until(
-            lambda d: bool(d.find_elements(By.XPATH, "//span[contains(normalize-space(.), '切换用户')]"))
-            or bool(d.find_elements(By.XPATH, "//*[contains(normalize-space(.), '用电户号')]"))
+            lambda d: bool(d.find_elements(By.XPATH, selectors.SWITCH_USER_TEXT))
+            or bool(d.find_elements(By.XPATH, selectors.USER_ID_LABEL))
             or (d.current_url or "").startswith(BALANCE_URL)
             or self.has_session_expired_modal(d)
         )
@@ -101,7 +102,7 @@ class Ha95598Navigator:
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//ul[@id='column_top']//span[contains(normalize-space(.), '我的')]",
+                    selectors.MY_PAGE_ENTRY,
                 )
             )
         )
@@ -115,7 +116,7 @@ class Ha95598Navigator:
                 EC.element_to_be_clickable(
                     (
                         By.XPATH,
-                        "//div[contains(@class,'el-message-box__wrapper')]//button[contains(@class,'el-button--primary')]",
+                        selectors.SESSION_EXPIRED_CONFIRM,
                     )
                 )
             )
@@ -154,7 +155,7 @@ class Ha95598Navigator:
 
     def read_current_userid(self, driver) -> Optional[str]:
         try:
-            label = driver.find_element(By.XPATH, "//*[contains(normalize-space(.), '用电户号')]").text or ""
+            label = driver.find_element(By.XPATH, selectors.USER_ID_LABEL).text or ""
             matches = re.findall(r"\b\d{13}\b", label)
             if matches:
                 return matches[-1]
@@ -190,14 +191,14 @@ class Ha95598Navigator:
 
     def choose_userid_by_index(self, driver, userid_index: int) -> None:
         self.tencent_captcha.clear_overlay(driver)
-        elements = driver.find_elements(By.CLASS_NAME, "button_confirm")
+        elements = driver.find_elements(By.CLASS_NAME, selectors.USER_CONFIRM_BUTTON_CLASS)
         if elements:
-            self._click_button(driver, By.XPATH, "//*[@id='app']/div/div[2]/div/div/div/div[2]/div[2]/div/button")
+            self._click_button(driver, By.XPATH, selectors.USER_CONFIRM_BUTTON)
         self._step_sleep(driver, f"after_user_confirm_dialog_{userid_index}")
         try:
-            self._click_button(driver, By.XPATH, "//span[contains(normalize-space(.), '切换用户')]")
+            self._click_button(driver, By.XPATH, selectors.SWITCH_USER_TEXT)
         except Exception:
-            self._click_button(driver, By.CLASS_NAME, "el-input__suffix")
+            self._click_button(driver, By.CLASS_NAME, selectors.USER_SELECTOR_SUFFIX_CLASS)
         self._step_sleep(driver, f"after_open_user_selector_{userid_index}")
         options = WebDriverWait(driver, self.driver_wait_time).until(lambda d: self.get_visible_user_options(d))
         if userid_index >= len(options):
@@ -211,9 +212,7 @@ class Ha95598Navigator:
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
-                    "//span[contains(normalize-space(.), '切换用户')]"
-                    " | //div[contains(@class,'houseNum')]//div[contains(@class,'el-select')]//span[contains(@class,'el-input__suffix')]"
-                    " | //div[contains(@class,'houseNum')]//span[contains(normalize-space(.), '切换用户')]",
+                    selectors.USER_SELECTOR_TRIGGER,
                 )
             )
         )
@@ -226,8 +225,7 @@ class Ha95598Navigator:
             option
             for option in driver.find_elements(
                 By.XPATH,
-                "//ul[contains(@class,'el-dropdown-menu')]//li"
-                " | //div[contains(@class,'el-select-dropdown')]//li",
+                selectors.USER_OPTIONS,
             )
             if option.is_displayed()
             and "is-disabled" not in (option.get_attribute("class") or "")

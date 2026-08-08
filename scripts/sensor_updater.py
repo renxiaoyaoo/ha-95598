@@ -15,6 +15,7 @@ from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
 from scripts.support.stale_alert import StaleDataAlertChecker
 from scripts.support.user_state import UserStateSnapshot
+from scripts.support.user_state_cache import UserStateCache
 from scripts.const import (
     BALANCE_SENSOR_NAME,
     BALANCE_UNIT,
@@ -74,6 +75,7 @@ class SensorUpdater:
         )
         self.notifier = build_notifier()
         self.cache_store = CacheStore(ROOT_DIR / "data" / "ha_95598_cache.json")
+        self.user_state_cache = UserStateCache(self.cache_store)
         self.db = SqliteDB()
         self.stale_alert_checker = StaleDataAlertChecker(self.notifier, self.update_progress)
         self.discovery_publisher = HaDiscoveryPublisher(
@@ -296,54 +298,33 @@ class SensorUpdater:
         peak_usage,
         tip_usage,
     ):
-        data = self.cache_store.load()
-        entry = data.get(user_id) if isinstance(data.get(user_id), dict) else {}
-        if not entry:
-            entry = {"data": {}, "progress": {"stage": "none"}}
-            data[user_id] = entry
-        entry["data"] = UserStateSnapshot(
-            balance=balance,
-            last_daily_date=last_daily_date,
-            last_daily_usage=last_daily_usage,
-            last_daily_charge=last_daily_charge,
-            yearly_charge=yearly_charge,
-            yearly_usage=yearly_usage,
-            month_charge=month_charge,
-            month_usage=month_usage,
-            valley_usage=valley_usage,
-            flat_usage=flat_usage,
-            peak_usage=peak_usage,
-            tip_usage=tip_usage,
-        ).to_cache_data()
-        self.cache_store.save(data)
+        self.user_state_cache.save_snapshot(
+            user_id,
+            UserStateSnapshot(
+                balance=balance,
+                last_daily_date=last_daily_date,
+                last_daily_usage=last_daily_usage,
+                last_daily_charge=last_daily_charge,
+                yearly_charge=yearly_charge,
+                yearly_usage=yearly_usage,
+                month_charge=month_charge,
+                month_usage=month_usage,
+                valley_usage=valley_usage,
+                flat_usage=flat_usage,
+                peak_usage=peak_usage,
+                tip_usage=tip_usage,
+            ),
+        )
 
     def republish(self):
-        cache_file = self._get_cache_file()
-        abs_cache_file = os.path.abspath(cache_file)
-        if not os.path.exists(cache_file):
-            logging.info(f"No cache file found at {abs_cache_file}, skipping republish.")
-            return False
-
         try:
-            data = self.cache_store.load()
-            logging.info("Loaded cache file %s with %s user entries.", cache_file, len(data))
-        except Exception as e:
-            logging.error(f"Failed to load cache file {abs_cache_file}: {e}")
-            return False
-
-        try:
-            for user_id, values in data.items():
-                logging.info("Republishing cached data for user %s", mask_user_id(user_id))
-                if not isinstance(values, dict):
-                    logging.warning("Skip invalid cache entry for user %s: %r", mask_user_id(user_id), values)
-                    continue
-                user_data = values.get("data", {})
-                if not any(key in user_data for key in UserStateSnapshot.UPDATE_KEYS):
-                    continue
-                clean_values = UserStateSnapshot.from_cache_data(user_data).to_update_kwargs()
+            republished = False
+            for user_id, snapshot in self.user_state_cache.iter_snapshots():
+                clean_values = snapshot.to_update_kwargs()
                 self.update_one_userid(user_id, notify_stale=False, log_success=False, **clean_values)
                 logging.info("Cached data republished for user %s.", mask_user_id(user_id))
-            return True
+                republished = True
+            return republished
         except Exception as e:
             logging.error(f"Failed to republish data: {e}")
             return False

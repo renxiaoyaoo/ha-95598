@@ -13,6 +13,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from captcha_solver.tencent import TencentCaptchaHandler
 from scripts.const import BALANCE_URL, LOGIN_URL
+from scripts.pages import login_selectors as selectors
 from scripts.support.credentials import LoginCredential, mask_account
 from scripts.support.error_watcher import ErrorWatcher
 from scripts.support.notifier import build_notifier
@@ -184,7 +185,8 @@ class LoginManager:
             driver.implicitly_wait(0)
             try:
                 WebDriverWait(driver, self.driver_wait_time * 3).until(
-                    lambda d: d.find_elements(By.CLASS_NAME, "user") or d.find_elements(By.CSS_SELECTOR, ".wap-login")
+                    lambda d: d.find_elements(By.CLASS_NAME, selectors.DESKTOP_LOGIN_READY_CLASS)
+                    or d.find_elements(By.CSS_SELECTOR, selectors.MOBILE_LOGIN_ROOT)
                 )
             finally:
                 driver.implicitly_wait(self.driver_wait_time)
@@ -199,7 +201,7 @@ class LoginManager:
 
         driver.implicitly_wait(0)
         try:
-            WebDriverWait(driver, 10).until(EC.invisibility_of_element_located((By.CLASS_NAME, "el-loading-mask")))
+            WebDriverWait(driver, 10).until(EC.invisibility_of_element_located((By.CLASS_NAME, selectors.LOADING_MASK_CLASS)))
         finally:
             driver.implicitly_wait(self.driver_wait_time)
 
@@ -207,40 +209,40 @@ class LoginManager:
             return self._login_mobile_password(driver, allow_fallback=allow_fallback)
 
         element = WebDriverWait(driver, self.driver_wait_time).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "user"))
+            EC.presence_of_element_located((By.CLASS_NAME, selectors.DESKTOP_USER_TRIGGER_CLASS))
         )
         driver.execute_script("arguments[0].click();", element)
         logging.info("find_element 'user'.\r")
-        self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[1]/div[1]/div[2]/span')
+        self._click_button(driver, By.XPATH, selectors.DESKTOP_PASSWORD_TAB)
         self._step_sleep(driver, "after_switch_to_password_tab")
 
-        self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[2]/div[1]/form/div[1]/div[3]/div/span[2]')
+        self._click_button(driver, By.XPATH, selectors.DESKTOP_AGREEMENT_CHECKBOX)
         logging.info("Click the Agree option.\r")
         self._step_sleep(driver, "after_click_agree")
         if phone_code:
             self._set_login_method("phone-code")
-            self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[1]/div[1]/div[3]/span')
-            input_elements = driver.find_elements(By.CLASS_NAME, "el-input__inner")
+            self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_CODE_TAB)
+            input_elements = driver.find_elements(By.CLASS_NAME, selectors.DESKTOP_INPUT_CLASS)
             input_elements[2].send_keys(self._account)
             logging.info("input_elements account : %s\r", mask_account(self._account))
-            self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[2]/div[2]/form/div[1]/div[2]/div[2]/div/a')
+            self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_CODE_BUTTON)
             code = input("Input your phone verification code: ")
             input_elements[3].send_keys(code)
             logging.info("input_elements verification code: %s.\r", code)
-            self._click_button(driver, By.XPATH, '//*[@id="login_box"]/div[2]/div[2]/form/div[2]/div/button/span')
+            self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_LOGIN_BUTTON)
             self._step_sleep(driver, "after_submit_phone_code_login")
             logging.info("Click login button.\r")
             return True
 
         if self._password is not None and len(self._password) > 0:
             self._set_login_method("password")
-            input_elements = driver.find_elements(By.CLASS_NAME, "el-input__inner")
+            input_elements = driver.find_elements(By.CLASS_NAME, selectors.DESKTOP_INPUT_CLASS)
             input_elements[0].send_keys(self._account)
             logging.info("input_elements account : %s\r", mask_account(self._account))
             input_elements[1].send_keys(self._password)
             logging.info("input_elements password : ********\r")
 
-            self._click_button(driver, By.CLASS_NAME, "el-button.el-button--primary")
+            self._click_button(driver, By.CLASS_NAME, selectors.DESKTOP_LOGIN_BUTTON_CLASS)
             self._step_sleep(driver, "after_submit_password_login")
             logging.info("Click login button.\r")
             post_login_state = self._wait_for_post_password_login_state(driver)
@@ -286,7 +288,7 @@ class LoginManager:
 
     def _is_mobile_login_page(self, driver) -> bool:
         try:
-            return bool(driver.find_elements(By.CSS_SELECTOR, ".wap-login"))
+            return bool(driver.find_elements(By.CSS_SELECTOR, selectors.MOBILE_LOGIN_ROOT))
         except Exception:
             return False
 
@@ -334,26 +336,22 @@ class LoginManager:
         self._set_login_method("password-mobile")
         logging.info("Detected mobile login page; use mobile password login flow.")
 
-        password_tab_xpath = (
-            "//div[contains(@class,'wap-login')]"
-            "//div[contains(@class,'normal-title') and contains(normalize-space(.),'密码登录')]"
-        )
         try:
             tab = WebDriverWait(driver, self.driver_wait_time).until(
-                EC.presence_of_element_located((By.XPATH, password_tab_xpath))
+                EC.presence_of_element_located((By.XPATH, selectors.MOBILE_PASSWORD_TAB))
             )
             driver.execute_script("arguments[0].click();", tab)
             self._step_sleep(driver, "after_switch_to_mobile_password_tab")
 
             password_form = WebDriverWait(driver, self.driver_wait_time).until(
                 lambda d: next(
-                    (el for el in d.find_elements(By.CSS_SELECTOR, ".wap-pass-login") if el.is_displayed()),
+                    (el for el in d.find_elements(By.CSS_SELECTOR, selectors.MOBILE_PASSWORD_FORM) if el.is_displayed()),
                     None,
                 )
             )
             self._ensure_mobile_agreement_checked(driver, password_form)
 
-            input_elements = password_form.find_elements(By.CLASS_NAME, "el-input__inner")
+            input_elements = password_form.find_elements(By.CLASS_NAME, selectors.DESKTOP_INPUT_CLASS)
             if len(input_elements) < 2:
                 raise RuntimeError("mobile password form inputs not found")
             input_elements[0].clear()
@@ -363,7 +361,7 @@ class LoginManager:
             input_elements[1].send_keys(self._password)
             logging.info("input_elements password : ********\r")
 
-            login_button = password_form.find_element(By.CSS_SELECTOR, ".login-Btn")
+            login_button = password_form.find_element(By.CSS_SELECTOR, selectors.MOBILE_LOGIN_BUTTON)
             driver.execute_script("arguments[0].click();", login_button)
             self._step_sleep(driver, "after_submit_mobile_password_login")
             logging.info("Click mobile login button.\r")
@@ -434,12 +432,7 @@ class LoginManager:
             driver.implicitly_wait(self.driver_wait_time)
 
     def _get_login_error_message(self, driver) -> Optional[str]:
-        for path in (
-            "//div[@class='errmsg-tip']//span",
-            "//*[contains(@class,'errmsg-tip')]",
-            "//*[contains(@class,'el-message')]",
-            "//*[contains(@class,'error') or contains(@class,'err')]",
-        ):
+        for path in selectors.LOGIN_ERROR_MESSAGES:
             message = self._get_error_message(driver, path)
             if message:
                 return message.strip()
@@ -575,7 +568,7 @@ class LoginManager:
                     logging.info("Login success via qrcode.")
                     return True
 
-                error = self._get_error_message(driver, "//div[@class='sweepCodePic']//div[@class='erwBg']//p")
+                error = self._get_error_message(driver, selectors.QR_ERROR)
                 if error is None:
                     continue
 
@@ -632,13 +625,13 @@ class LoginManager:
 
     def _wait_for_fresh_qr_code(self, driver, previous_qr_src: Optional[str]) -> tuple[object, bytes, str]:
         def read_qr_code(d):
-            element = d.find_element(By.XPATH, "//div[@class='sweepCodePic']//img")
+            element = d.find_element(By.XPATH, selectors.QR_IMAGE)
             if not element.is_displayed():
                 return False
             img_src = element.get_attribute("src") or ""
             if not img_src or img_src == previous_qr_src:
                 return False
-            error = self._get_error_message(d, "//div[@class='sweepCodePic']//div[@class='erwBg']//p")
+            error = self._get_error_message(d, selectors.QR_ERROR)
             if error and "二维码失效" in error:
                 return False
             if img_src.startswith("data:image"):
@@ -655,7 +648,7 @@ class LoginManager:
     def _open_qr_login_tab(self, driver) -> bool:
         try:
             element = WebDriverWait(driver, self.driver_wait_time).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "qr_code"))
+                EC.presence_of_element_located((By.CLASS_NAME, selectors.QR_TAB_CLASS))
             )
             driver.execute_script("arguments[0].click();", element)
             logging.info("switch to qrcode mode")
