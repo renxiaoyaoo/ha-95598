@@ -214,7 +214,7 @@ def main() -> None:
         driver.get(ELECTRIC_BILL_SUMMARY_URL)
         fetcher.step_sleep(driver, "probe_after_open_bill_summary")
         _dump_page(fetcher, driver, "bill_summary")
-        if fetcher._open_bill_detail_by_index(driver, 0):
+        if fetcher.monthly_bill_fetcher.open_detail_by_index(driver, 0):
             _dump_page(fetcher, driver, "bill_detail")
     finally:
         driver.quit()
