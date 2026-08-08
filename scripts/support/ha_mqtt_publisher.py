@@ -1,6 +1,24 @@
 from __future__ import annotations
 
-from typing import Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+
+@dataclass
+class SensorPublishPlan:
+    sensor_name: str
+    user_id: str
+    state: Any
+    unit: str
+    icon: str
+    device_class: str
+    state_class: str
+    extra_attributes: dict[str, Any] = field(default_factory=dict)
+
+    def state_payload(self) -> dict[str, Any]:
+        payload = {"state": self.state}
+        payload.update(self.extra_attributes)
+        return payload
 
 
 class HaDiscoveryPublisher:
@@ -76,8 +94,25 @@ class SensorStatePublisher:
     ) -> None:
         if state is None:
             return
-        self.discovery.publish(sensor_name, user_id, device_class, unit, icon, state_class)
-        payload = {"state": state}
-        if extra_attributes:
-            payload.update(extra_attributes)
-        self.mqtt_publish(self.discovery.state_topic(sensor_name), payload)
+        plan = SensorPublishPlan(
+            sensor_name=sensor_name,
+            user_id=user_id,
+            state=state,
+            unit=unit,
+            icon=icon,
+            device_class=device_class,
+            state_class=state_class,
+            extra_attributes=extra_attributes or {},
+        )
+        self.publish_plan(plan)
+
+    def publish_plan(self, plan: SensorPublishPlan) -> None:
+        self.discovery.publish(
+            plan.sensor_name,
+            plan.user_id,
+            plan.device_class,
+            plan.unit,
+            plan.icon,
+            plan.state_class,
+        )
+        self.mqtt_publish(self.discovery.state_topic(plan.sensor_name), plan.state_payload())

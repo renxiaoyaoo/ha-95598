@@ -4,6 +4,7 @@ from typing import Any
 
 from selenium.webdriver.common.by import By
 
+from scripts.pages import usage_selectors as selectors
 from scripts.support.data_rows import DailyUsageRow
 
 
@@ -21,7 +22,7 @@ class VueDailyRangeCollector:
         if start_date > end_date:
             raise ValueError("start_date must be earlier than or equal to end_date")
 
-        self._click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
+        self._click_button(driver, By.XPATH, selectors.DAILY_TAB)
         self._step_sleep(driver, "after_open_daily_tab_for_range")
 
         result = self._query_vue_daily_range(driver, start_date, end_date)

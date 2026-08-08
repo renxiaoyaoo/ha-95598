@@ -2,6 +2,7 @@ import logging
 
 from scripts.support.credentials import mask_user_id
 from scripts.support.data_persister import FetchedUserData
+from scripts.support.fetch_result import FetchResult
 
 
 class FetchWorkflow:
@@ -219,17 +220,17 @@ class FetchWorkflow:
         else:
             month_usage = None
 
-        return (
-            balance,
-            last_daily_date,
-            last_daily_usage,
-            last_daily_charge,
-            yearly_charge,
-            yearly_usage,
-            month_charge,
-            month_usage,
-            valley_usage,
-            flat_usage,
-            peak_usage,
-            tip_usage,
+        return FetchResult(
+            balance=balance,
+            last_daily_date=last_daily_date,
+            last_daily_usage=last_daily_usage,
+            last_daily_charge=last_daily_charge,
+            yearly_charge=yearly_charge,
+            yearly_usage=yearly_usage,
+            month_charge=month_charge,
+            month_usage=month_usage,
+            valley_usage=valley_usage,
+            flat_usage=flat_usage,
+            peak_usage=peak_usage,
+            tip_usage=tip_usage,
         )

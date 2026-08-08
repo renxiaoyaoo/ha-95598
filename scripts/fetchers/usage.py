@@ -8,6 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
 from scripts.fetchers.vue_state import normalize_usage, selected_vue_data
+from scripts.pages import usage_selectors as selectors
 
 
 class UsageFetcher:
@@ -24,22 +25,21 @@ class UsageFetcher:
 
     def select_usage_year(self, driver, target_year: int) -> bool:
         target_year = int(target_year)
-        input_xpath = '//*[@id="pane-first"]/div[1]/div/div[1]/div/div/input'
         try:
-            year_input = driver.find_element(By.XPATH, input_xpath)
+            year_input = driver.find_element(By.XPATH, selectors.YEAR_INPUT)
             current_value = (year_input.get_attribute("value") or "").strip()
             if current_value == str(target_year):
                 return True
 
-            self.click_button(driver, By.XPATH, input_xpath)
+            self.click_button(driver, By.XPATH, selectors.YEAR_INPUT)
             self.step_sleep(driver, f"after_open_usage_year_selector_{target_year}")
             option = WebDriverWait(driver, self.driver_wait_time).until(
-                EC.element_to_be_clickable((By.XPATH, f"//span[text() = '{target_year}']"))
+                EC.element_to_be_clickable((By.XPATH, selectors.year_option(target_year)))
             )
             driver.execute_script("arguments[0].click();", option)
             self.step_sleep(driver, f"after_select_usage_year_{target_year}")
             WebDriverWait(driver, self.driver_wait_time).until(
-                lambda d: (d.find_element(By.XPATH, input_xpath).get_attribute("value") or "").strip() == str(target_year)
+                lambda d: (d.find_element(By.XPATH, selectors.YEAR_INPUT).get_attribute("value") or "").strip() == str(target_year)
             )
             return True
         except Exception as exc:
@@ -48,7 +48,7 @@ class UsageFetcher:
 
     def get_yearly_data(self, driver, target_year=None):
         try:
-            self.click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-first']")
+            self.click_button(driver, By.XPATH, selectors.MONTHLY_TAB)
             self.step_sleep(driver, "after_open_yearly_tab")
             desired_year = target_year
             if desired_year is None and datetime.now().month == 1:
@@ -56,7 +56,7 @@ class UsageFetcher:
             if desired_year is not None and not self.select_usage_year(driver, desired_year):
                 return None, None
             WebDriverWait(driver, self.driver_wait_time).until(
-                EC.visibility_of_element_located((By.XPATH, "//*[@id='pane-first']//ul[contains(@class,'total')]"))
+                EC.visibility_of_element_located((By.XPATH, selectors.YEARLY_TOTAL))
             )
             usage_data = normalize_usage(selected_vue_data(driver))
             if usage_data.get("yearly_usage") is not None:
@@ -71,13 +71,13 @@ class UsageFetcher:
             return None, None
 
         try:
-            yearly_usage = driver.find_element(By.XPATH, "//*[@id='pane-first']//ul[contains(@class,'total')]/li[1]/span").text
+            yearly_usage = driver.find_element(By.XPATH, selectors.YEARLY_USAGE).text
         except Exception as exc:
             logging.error("The yearly_usage data get failed : %s", exc)
             yearly_usage = None
 
         try:
-            yearly_charge = driver.find_element(By.XPATH, "//*[@id='pane-first']//ul[contains(@class,'total')]/li[2]/span").text
+            yearly_charge = driver.find_element(By.XPATH, selectors.YEARLY_CHARGE).text
         except Exception as exc:
             logging.error("The yearly_charge data get failed : %s", exc)
             yearly_charge = None
@@ -86,17 +86,17 @@ class UsageFetcher:
 
     def get_yesterday_usage(self, driver):
         try:
-            self.click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
+            self.click_button(driver, By.XPATH, selectors.DAILY_TAB)
             self.step_sleep(driver, "after_open_daily_tab_for_yesterday")
             usage_element = driver.find_element(
                 By.XPATH,
-                "//div[@class='el-tab-pane dayd']//div[@class='el-table__body-wrapper is-scrolling-none']/table/tbody/tr[1]/td[2]/div",
+                selectors.DAILY_FIRST_USAGE,
             )
             WebDriverWait(driver, self.driver_wait_time).until(EC.visibility_of(usage_element))
 
             date_element = driver.find_element(
                 By.XPATH,
-                "//div[@class='el-tab-pane dayd']//div[@class='el-table__body-wrapper is-scrolling-none']/table/tbody/tr[1]/td[1]/div",
+                selectors.DAILY_FIRST_DATE,
             )
             last_daily_date = date_element.text
             return last_daily_date, float(usage_element.text)
@@ -105,14 +105,9 @@ class UsageFetcher:
             return None, None
 
     def get_latest_daily_usage_breakdown(self, driver):
-        selectors = (
-            ".//p[.//text()[contains(.,'谷用电')]]//span[contains(@class,'num')]",
-            ".//p[.//text()[contains(.,'平用电')]]//span[contains(@class,'num')]",
-            ".//p[.//text()[contains(.,'峰用电')]]//span[contains(@class,'num')]",
-            ".//p[.//text()[contains(.,'尖用电')]]//span[contains(@class,'num')]",
-        )
+        tou_selectors = tuple(selectors.TOU_VALUE_SELECTORS.values())
         try:
-            self.click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
+            self.click_button(driver, By.XPATH, selectors.DAILY_TAB)
             self.step_sleep(driver, "after_open_daily_tab_for_tou_breakdown")
             usage_data = normalize_usage(selected_vue_data(driver))
             daily_rows = [row for row in usage_data.get("daily", []) if row.get("usage") is not None]
@@ -127,7 +122,7 @@ class UsageFetcher:
                 )
             expand_icon = driver.find_element(
                 By.XPATH,
-                "//div[@class='el-tab-pane dayd']//div[contains(@class,'el-table__body-wrapper')]//table/tbody/tr[1]//div[contains(@class,'el-table__expand-icon')]",
+                selectors.DAILY_FIRST_EXPAND_ICON,
             )
             if "el-table__expand-icon--expanded" not in (expand_icon.get_attribute("class") or ""):
                 driver.execute_script("arguments[0].click();", expand_icon)
@@ -135,12 +130,12 @@ class UsageFetcher:
                 EC.visibility_of_element_located(
                     (
                         By.XPATH,
-                        "//div[@class='el-tab-pane dayd']//table/tbody/tr[1]/following-sibling::tr[1]//td[contains(@class,'el-table__expanded-cell')]",
+                        selectors.DAILY_FIRST_EXPANDED_CELL,
                     )
                 )
             )
             values = []
-            for selector in selectors:
+            for selector in tou_selectors:
                 values.append(float(expanded_cell.find_element(By.XPATH, selector).text.strip()))
             return tuple(values)
         except Exception as exc:
@@ -148,15 +143,9 @@ class UsageFetcher:
             return None, None, None, None
 
     def get_recent_daily_usage_breakdown_map(self, driver, limit_days=7):
-        selectors = {
-            "valley_usage": ".//p[.//text()[contains(.,'谷用电')]]//span[contains(@class,'num')]",
-            "flat_usage": ".//p[.//text()[contains(.,'平用电')]]//span[contains(@class,'num')]",
-            "peak_usage": ".//p[.//text()[contains(.,'峰用电')]]//span[contains(@class,'num')]",
-            "tip_usage": ".//p[.//text()[contains(.,'尖用电')]]//span[contains(@class,'num')]",
-        }
         daily_tou_map = {}
         try:
-            self.click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
+            self.click_button(driver, By.XPATH, selectors.DAILY_TAB)
             self.step_sleep(driver, "after_open_daily_tab_for_recent_tou_breakdown")
             if not self.set_daily_retention_days(driver, retention_days=7):
                 return daily_tou_map
@@ -180,15 +169,15 @@ class UsageFetcher:
                 EC.presence_of_all_elements_located(
                     (
                         By.XPATH,
-                        "//*[@id='pane-second']//div[contains(@class,'el-table__body-wrapper')]//table/tbody/tr[./td[1]/div and ./td[2]/div]",
+                        selectors.DAILY_TABLE_ROWS,
                     )
                 )
             )
             for row in data_rows[:limit_days]:
-                row_date = (row.find_element(By.XPATH, "./td[1]/div").text or "").strip()
+                row_date = (row.find_element(By.XPATH, selectors.ROW_DATE_CELL).text or "").strip()
                 if not row_date:
                     continue
-                expand_icon = row.find_element(By.XPATH, ".//div[contains(@class,'el-table__expand-icon')]")
+                expand_icon = row.find_element(By.XPATH, selectors.ROW_EXPAND_ICON)
                 if "el-table__expand-icon--expanded" not in (expand_icon.get_attribute("class") or ""):
                     driver.execute_script("arguments[0].click();", expand_icon)
 
@@ -196,12 +185,12 @@ class UsageFetcher:
                     EC.visibility_of_element_located(
                         (
                             By.XPATH,
-                            f"//*[@id='pane-second']//div[contains(@class,'el-table__body-wrapper')]//table/tbody/tr[./td[1]/div and normalize-space(./td[1]/div)='{row_date}']/following-sibling::tr[1]//td[contains(@class,'el-table__expanded-cell')]",
+                            selectors.expanded_cell_for_date(row_date),
                         )
                     )
                 )
                 values = {}
-                for key, selector in selectors.items():
+                for key, selector in selectors.TOU_VALUE_SELECTORS.items():
                     try:
                         values[key] = float(expanded_cell.find_element(By.XPATH, selector).text.strip())
                     except Exception:
@@ -213,13 +202,13 @@ class UsageFetcher:
             return daily_tou_map
 
     def set_daily_retention_days(self, driver, retention_days=30) -> bool:
-        self.click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-second']")
+        self.click_button(driver, By.XPATH, selectors.DAILY_TAB)
         self.step_sleep(driver, "after_open_daily_tab_for_retention")
         try:
             if retention_days == 7:
-                self.click_button(driver, By.XPATH, "//*[@id='pane-second']/div[1]/div/label[1]/span[1]")
+                self.click_button(driver, By.XPATH, selectors.DAILY_RETENTION_7)
             elif retention_days == 30:
-                self.click_button(driver, By.XPATH, "//*[@id='pane-second']/div[1]/div/label[2]/span[1]")
+                self.click_button(driver, By.XPATH, selectors.DAILY_RETENTION_30)
             else:
                 logging.error("Unsupported retention days value: %s", retention_days)
                 return False
@@ -240,24 +229,24 @@ class UsageFetcher:
 
         usage_element = driver.find_element(
             By.XPATH,
-            "//div[@class='el-tab-pane dayd']//div[@class='el-table__body-wrapper is-scrolling-none']/table/tbody/tr[1]/td[2]/div",
+            selectors.DAILY_FIRST_USAGE,
         )
         WebDriverWait(driver, self.driver_wait_time).until(EC.visibility_of(usage_element))
 
         days_element = driver.find_elements(
             By.XPATH,
-            "//*[@id='pane-second']/div[2]/div[2]/div[1]/div[3]/table/tbody/tr",
+            selectors.DAILY_TABLE_BODY_ROWS,
         )
         date = []
         usages = []
         for row in days_element:
-            cells = row.find_elements(By.XPATH, "./td")
+            cells = row.find_elements(By.XPATH, selectors.ROW_CELLS)
             if len(cells) < 2:
                 logging.debug("Skip non-data daily row, td count=%s, text=%s", len(cells), row.text)
                 continue
 
-            day_elements = row.find_elements(By.XPATH, "./td[1]/div")
-            usage_elements = row.find_elements(By.XPATH, "./td[2]/div")
+            day_elements = row.find_elements(By.XPATH, selectors.ROW_DATE_CELL)
+            usage_elements = row.find_elements(By.XPATH, selectors.ROW_USAGE_CELL)
             if not day_elements or not usage_elements:
                 logging.debug("Skip malformed daily row, text=%s", row.text)
                 continue
@@ -271,7 +260,7 @@ class UsageFetcher:
 
     def get_month_usage(self, driver, target_year=None):
         try:
-            self.click_button(driver, By.XPATH, "//div[@class='el-tabs__nav is-top']/div[@id='tab-first']")
+            self.click_button(driver, By.XPATH, selectors.MONTHLY_TAB)
             self.step_sleep(driver, "after_open_monthly_tab")
             desired_year = target_year
             if desired_year is None and datetime.now().month == 1:
@@ -280,7 +269,7 @@ class UsageFetcher:
                 return None, None, None
             WebDriverWait(driver, self.driver_wait_time).until(
                 EC.visibility_of_element_located(
-                    (By.XPATH, "//*[@id='pane-first']//div[contains(@class,'el-table__body-wrapper')]//table/tbody")
+                    (By.XPATH, selectors.MONTH_TABLE_BODY)
                 )
             )
             usage_data = normalize_usage(selected_vue_data(driver))
@@ -294,7 +283,7 @@ class UsageFetcher:
                 )
             month_element = driver.find_element(
                 By.XPATH,
-                "//*[@id='pane-first']//div[contains(@class,'el-table__body-wrapper')]//table/tbody",
+                selectors.MONTH_TABLE_BODY,
             ).text
             month_element = month_element.split("\n")
             month_element = [x for x in month_element if x != "MAX"]

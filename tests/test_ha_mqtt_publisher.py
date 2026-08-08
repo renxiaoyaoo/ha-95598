@@ -1,4 +1,19 @@
-from scripts.support.ha_mqtt_publisher import HaDiscoveryPublisher, SensorStatePublisher
+from scripts.support.ha_mqtt_publisher import HaDiscoveryPublisher, SensorPublishPlan, SensorStatePublisher
+
+
+def test_sensor_publish_plan_builds_state_payload():
+    plan = SensorPublishPlan(
+        sensor_name="sensor.test_0000",
+        user_id="test-user-0000",
+        state=1.23,
+        unit="kWh",
+        icon="mdi:test",
+        device_class="energy",
+        state_class="total",
+        extra_attributes={"period": "2026-08"},
+    )
+
+    assert plan.state_payload() == {"state": 1.23, "period": "2026-08"}
 
 
 def test_sensor_state_publisher_publishes_discovery_once_then_states():
