@@ -9,6 +9,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from scripts.const import ELECTRIC_BILL_SUMMARY_URL
 from scripts.fetchers.vue_state import normalize_bill_detail, selected_vue_data
+from scripts.support.monthly_billing import MonthlyBillingService
 
 
 class MonthlyBillFetcher:
@@ -39,9 +40,9 @@ class MonthlyBillFetcher:
         if not self.db.connect_user_db(user_id):
             return [], False
         rows = []
-        touched_years = set()
         verified = False
         try:
+            billing = MonthlyBillingService(self.db)
             self.open_summary_page(driver)
             available_years = self.get_available_years(driver)
             current_year = datetime.now().year
@@ -86,27 +87,7 @@ class MonthlyBillFetcher:
                     if needs_deep_sync:
                         self.expand_summary(driver)
 
-            for row in rows:
-                existing = self.db.get_period_row("monthly_usage", "month", row["month"]) or {}
-                self.db.upsert_official_monthly_bill(
-                    {
-                        "month": row["month"],
-                        "total_usage": row.get("total_usage")
-                        if row.get("total_usage") is not None
-                        else existing.get("total_usage", 0.0),
-                        "total_charge": row.get("total_charge")
-                        if row.get("total_charge") is not None
-                        else existing.get("total_charge"),
-                        "valley_usage": row.get("valley_usage", 0.0),
-                        "flat_usage": row.get("flat_usage", 0.0),
-                        "peak_usage": row.get("peak_usage", 0.0),
-                        "tip_usage": row.get("tip_usage", 0.0),
-                    }
-                )
-                touched_years.add(row["month"][:4])
-
-            for year in sorted(touched_years):
-                self.db.refresh_year_from_months(year)
+            billing.upsert_official_bills_and_refresh_years(rows)
         finally:
             self.db.close_connect()
 

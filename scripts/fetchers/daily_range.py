@@ -7,6 +7,7 @@ from scripts.sensor_updater import SensorUpdater
 from scripts.support.error_watcher import ErrorWatcher
 from scripts.support.credentials import mask_user_id
 from scripts.support.ha_energy_backfiller import HaEnergyStatisticsBackfiller
+from scripts.support.monthly_billing import MonthlyBillingService
 
 
 class DailyRangeFetchService:
@@ -121,6 +122,7 @@ class DailyRangeFetchService:
         touched_years = set()
         persisted_count = 0
         try:
+            billing = MonthlyBillingService(self.db)
             for row in sorted(rows, key=lambda item: item["date"]):
                 row_date = row["date"]
                 month_usage_before = self.db.get_month_total_usage_before(row_date)
@@ -151,9 +153,9 @@ class DailyRangeFetchService:
                 persisted_count += 1
 
             for month in sorted(touched_months):
-                self.db.upsert_calculated_monthly_from_daily(month)
+                billing.upsert_calculated_from_daily(month)
             for year in sorted(touched_years):
-                self.db.refresh_year_from_months(year)
+                billing.refresh_year(year)
         finally:
             self.db.close_connect()
 
