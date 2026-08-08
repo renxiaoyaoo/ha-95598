@@ -14,6 +14,7 @@ from scripts.support.mqtt_publisher import MqttPublisher
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
 from scripts.support.stale_alert import StaleDataAlertChecker
+from scripts.support.user_state import UserStateSnapshot
 from scripts.const import (
     BALANCE_SENSOR_NAME,
     BALANCE_UNIT,
@@ -300,21 +301,20 @@ class SensorUpdater:
         if not entry:
             entry = {"data": {}, "progress": {"stage": "none"}}
             data[user_id] = entry
-        entry["data"] = {
-            "balance": balance,
-            "last_daily_date": last_daily_date,
-            "last_daily_usage": last_daily_usage,
-            "last_daily_charge": last_daily_charge,
-            "yearly_charge": yearly_charge,
-            "yearly_usage": yearly_usage,
-            "month_charge": month_charge,
-            "month_usage": month_usage,
-            "valley_usage": valley_usage,
-            "flat_usage": flat_usage,
-            "peak_usage": peak_usage,
-            "tip_usage": tip_usage,
-            "timestamp": datetime.now().isoformat()
-        }
+        entry["data"] = UserStateSnapshot(
+            balance=balance,
+            last_daily_date=last_daily_date,
+            last_daily_usage=last_daily_usage,
+            last_daily_charge=last_daily_charge,
+            yearly_charge=yearly_charge,
+            yearly_usage=yearly_usage,
+            month_charge=month_charge,
+            month_usage=month_usage,
+            valley_usage=valley_usage,
+            flat_usage=flat_usage,
+            peak_usage=peak_usage,
+            tip_usage=tip_usage,
+        ).to_cache_data()
         self.cache_store.save(data)
 
     def republish(self):
@@ -338,23 +338,9 @@ class SensorUpdater:
                     logging.warning("Skip invalid cache entry for user %s: %r", mask_user_id(user_id), values)
                     continue
                 user_data = values.get("data", {})
-                allowed_keys = {
-                    "balance",
-                    "last_daily_date",
-                    "last_daily_usage",
-                    "last_daily_charge",
-                    "yearly_charge",
-                    "yearly_usage",
-                    "month_charge",
-                    "month_usage",
-                    "valley_usage",
-                    "flat_usage",
-                    "peak_usage",
-                    "tip_usage",
-                }
-                clean_values = {k: v for k, v in user_data.items() if k in allowed_keys}
-                if not clean_values:
+                if not any(key in user_data for key in UserStateSnapshot.UPDATE_KEYS):
                     continue
+                clean_values = UserStateSnapshot.from_cache_data(user_data).to_update_kwargs()
                 self.update_one_userid(user_id, notify_stale=False, log_success=False, **clean_values)
                 logging.info("Cached data republished for user %s.", mask_user_id(user_id))
             return True
