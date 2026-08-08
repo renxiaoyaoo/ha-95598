@@ -413,7 +413,7 @@ class DataFetcher:
 
     def _monthly_tou_needs_sync(self, month_key: str) -> bool:
         existing = self.db.get_period_row("monthly_usage", "month", month_key)
-        return not self._row_has_nonzero_tou(existing)
+        return not existing or existing.get("source") != "official"
 
     def _open_bill_detail_by_index(self, driver, bill_index: int):
         month_rows = driver.find_elements(By.XPATH, "//div[contains(@class,'billList_content')]")
@@ -578,6 +578,7 @@ class DataFetcher:
                         "flat_usage": row.get("flat_usage", 0.0),
                         "peak_usage": row.get("peak_usage", 0.0),
                         "tip_usage": row.get("tip_usage", 0.0),
+                        "source": "official",
                     }
                 )
                 touched_years.add(row["month"][:4])

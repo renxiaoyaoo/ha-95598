@@ -79,6 +79,7 @@ class SqliteDB:
                 flat_usage REAL NOT NULL DEFAULT 0,
                 peak_usage REAL NOT NULL DEFAULT 0,
                 tip_usage REAL NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'calculated',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, month)
@@ -111,7 +112,15 @@ class SqliteDB:
         self.connect.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{self.YEARLY_TABLE}_user_year ON {self.YEARLY_TABLE}(user_id, year)"
         )
+        self._ensure_column(self.MONTHLY_TABLE, "source", "TEXT NOT NULL DEFAULT 'calculated'")
         self.connect.commit()
+
+    def _ensure_column(self, table_name: str, column_name: str, column_definition: str) -> None:
+        assert self.connect is not None
+        cursor = self.connect.execute(f"PRAGMA table_info({table_name})")
+        columns = {row[1] for row in cursor.fetchall()}
+        if column_name not in columns:
+            self.connect.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
     def _configure_connection(self) -> None:
         assert self.connect is not None
@@ -167,7 +176,52 @@ class SqliteDB:
             return False
 
     def insert_monthly_data(self, data: dict) -> bool:
-        return self._upsert_period_data(self.MONTHLY_TABLE, "month", data)
+        if self.connect is None or self.user_id is None:
+            logging.error("Database connection is not established.")
+            return False
+
+        try:
+            month = str(data["month"]).strip()
+            total_usage = float(data["total_usage"])
+            total_charge = self._safe_float(data.get("total_charge"), default=None)
+            valley_usage = self._safe_float(data.get("valley_usage"), default=0.0)
+            flat_usage = self._safe_float(data.get("flat_usage"), default=0.0)
+            peak_usage = self._safe_float(data.get("peak_usage"), default=0.0)
+            tip_usage = self._safe_float(data.get("tip_usage"), default=0.0)
+            source = str(data.get("source") or "calculated").strip() or "calculated"
+            self.connect.execute(
+                f"""
+                INSERT INTO {self.MONTHLY_TABLE} (
+                    user_id, month, total_usage, total_charge,
+                    valley_usage, flat_usage, peak_usage, tip_usage, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, month) DO UPDATE SET
+                    total_usage = excluded.total_usage,
+                    total_charge = COALESCE(excluded.total_charge, {self.MONTHLY_TABLE}.total_charge),
+                    valley_usage = COALESCE(excluded.valley_usage, {self.MONTHLY_TABLE}.valley_usage),
+                    flat_usage = COALESCE(excluded.flat_usage, {self.MONTHLY_TABLE}.flat_usage),
+                    peak_usage = COALESCE(excluded.peak_usage, {self.MONTHLY_TABLE}.peak_usage),
+                    tip_usage = COALESCE(excluded.tip_usage, {self.MONTHLY_TABLE}.tip_usage),
+                    source = excluded.source,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    self.user_id,
+                    month,
+                    total_usage,
+                    total_charge,
+                    valley_usage,
+                    flat_usage,
+                    peak_usage,
+                    tip_usage,
+                    source,
+                ),
+            )
+            self.connect.commit()
+            return True
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+            logging.error("Failed to insert monthly data: %s", exc)
+            return False
 
     def insert_yearly_data(self, data: dict) -> bool:
         return self._upsert_period_data(self.YEARLY_TABLE, "year", data)
@@ -234,7 +288,14 @@ class SqliteDB:
         try:
             cursor.execute(
                 f"""
-                SELECT total_usage, total_charge, valley_usage, flat_usage, peak_usage, tip_usage
+                SELECT
+                    total_usage,
+                    total_charge,
+                    valley_usage,
+                    flat_usage,
+                    peak_usage,
+                    tip_usage
+                    {", source" if table_name == self.MONTHLY_TABLE else ""}
                 FROM {table_name}
                 WHERE user_id = ? AND {period_key} = ?
                 """,
@@ -250,6 +311,7 @@ class SqliteDB:
                 "flat_usage": self._safe_float(row[3], default=0.0),
                 "peak_usage": self._safe_float(row[4], default=0.0),
                 "tip_usage": self._safe_float(row[5], default=0.0),
+                **({"source": row[6]} if table_name == self.MONTHLY_TABLE else {}),
             }
         finally:
             cursor.close()
@@ -530,6 +592,11 @@ class SqliteDB:
             logging.error("Database connection is not established.")
             return False
 
+        existing = self.get_period_row(self.MONTHLY_TABLE, "month", month)
+        if existing and existing.get("source") == "official":
+            logging.info("Skip syncing %s from daily data because official monthly bill already exists.", month)
+            return True
+
         cursor = self.connect.cursor()
         try:
             cursor.execute(
@@ -560,6 +627,7 @@ class SqliteDB:
                     "flat_usage": self._safe_float(daily_sum[3], default=0.0),
                     "peak_usage": self._safe_float(daily_sum[4], default=0.0),
                     "tip_usage": self._safe_float(daily_sum[5], default=0.0),
+                    "source": "calculated",
                 }
             )
         finally:

@@ -141,6 +141,76 @@ def test_sync_yearly_from_monthly_aggregates_tou(tmp_path) -> None:
         os.environ.pop("DB_NAME", None)
 
 
+def test_sync_monthly_from_daily_keeps_official_monthly_bill(tmp_path) -> None:
+    db_path = tmp_path / "official_monthly.db"
+    os.environ["DB_NAME"] = str(db_path)
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user") is True
+        assert db.insert_monthly_data(
+            {
+                "month": "2026-07",
+                "total_usage": 576,
+                "total_charge": 298.04,
+                "valley_usage": 166,
+                "flat_usage": 224,
+                "peak_usage": 186,
+                "tip_usage": 0,
+                "source": "official",
+            }
+        )
+        assert db.insert_daily_data(
+            {
+                "date": "2026-07-01",
+                "total_usage": 20,
+                "total_charge": 8.5,
+                "valley_usage": 5,
+                "flat_usage": 8,
+                "peak_usage": 7,
+                "tip_usage": 0,
+            }
+        )
+
+        assert db.sync_monthly_from_daily("2026-07") is True
+        monthly = db.get_period_row("monthly_usage", "month", "2026-07")
+
+        assert monthly is not None
+        assert monthly["total_usage"] == 576.0
+        assert monthly["total_charge"] == 298.04
+        assert monthly["source"] == "official"
+    finally:
+        os.environ.pop("DB_NAME", None)
+
+
+def test_sync_monthly_from_daily_creates_calculated_month_when_no_official_bill(tmp_path) -> None:
+    db_path = tmp_path / "calculated_monthly.db"
+    os.environ["DB_NAME"] = str(db_path)
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user") is True
+        assert db.insert_daily_data(
+            {
+                "date": "2026-08-01",
+                "total_usage": 12,
+                "total_charge": 5.03,
+                "valley_usage": 4,
+                "flat_usage": 5,
+                "peak_usage": 3,
+                "tip_usage": 0,
+            }
+        )
+
+        assert db.sync_monthly_from_daily("2026-08") is True
+        monthly = db.get_period_row("monthly_usage", "month", "2026-08")
+
+        assert monthly is not None
+        assert monthly["total_usage"] == 12.0
+        assert monthly["total_charge"] == 5.03
+        assert monthly["source"] == "calculated"
+    finally:
+        os.environ.pop("DB_NAME", None)
+
+
 def test_sqlite_summary_helpers(tmp_path) -> None:
     db_path = tmp_path / "summary.db"
     os.environ["DB_NAME"] = str(db_path)
