@@ -8,6 +8,7 @@ from scripts.support.cache_store import CacheStore
 from scripts.support.credentials import mask_user_id
 from scripts.support.db import SqliteDB
 from scripts.support.fetch_progress import FETCH_STAGES as ALL_FETCH_STAGES
+from scripts.support.ha_mqtt_publisher import HaDiscoveryPublisher, SensorStatePublisher
 from scripts.support.ha_payloads import HistoryPayloadBuilder
 from scripts.support.mqtt_publisher import MqttPublisher
 from scripts.support.notifier import build_notifier
@@ -70,11 +71,21 @@ class SensorUpdater:
             qos=int(os.getenv("MQTT_QOS", 1)),
             retain=os.getenv("MQTT_RETAIN", "true").lower() == "true",
         )
-        self._published_discovery_topics: set[str] = set()
         self.notifier = build_notifier()
         self.cache_store = CacheStore(ROOT_DIR / "data" / "ha_95598_cache.json")
         self.db = SqliteDB()
         self.stale_alert_checker = StaleDataAlertChecker(self.notifier, self.update_progress)
+        self.discovery_publisher = HaDiscoveryPublisher(
+            discovery_prefix=self.discovery_prefix,
+            state_prefix=self.state_prefix,
+            mqtt_publish=lambda topic, payload, retain=None: self._publish_mqtt(topic, payload, retain=retain),
+            friendly_label=self._sensor_friendly_label,
+            device_payload=self._device_payload,
+        )
+        self.sensor_state_publisher = SensorStatePublisher(
+            discovery=self.discovery_publisher,
+            mqtt_publish=lambda topic, payload, retain=None: self._publish_mqtt(topic, payload, retain=retain),
+        )
 
     def _device_payload(self, user_id: str):
         return {
@@ -126,40 +137,16 @@ class SensorUpdater:
         self.mqtt_publisher.close()
 
     def _sensor_object_id(self, sensor_name: str) -> str:
-        if sensor_name.startswith("sensor."):
-            sensor_name = sensor_name.removeprefix("sensor.")
-        return sensor_name.replace(".", "_")
+        return self.discovery_publisher.sensor_object_id(sensor_name)
 
     def _state_topic(self, sensor_name: str) -> str:
-        return f"{self.state_prefix}/{self._sensor_object_id(sensor_name)}/state"
+        return self.discovery_publisher.state_topic(sensor_name)
 
     def _discovery_topic(self, sensor_name: str) -> str:
-        return f"{self.discovery_prefix}/sensor/{self._sensor_object_id(sensor_name)}/config"
+        return self.discovery_publisher.discovery_topic(sensor_name)
 
     def _publish_discovery(self, sensor_name: str, user_id: str, device_class: str, unit: str, icon: str, state_class: str):
-        topic = self._discovery_topic(sensor_name)
-        if topic in self._published_discovery_topics:
-            return
-
-        friendly_name = self._sensor_friendly_label(sensor_name, user_id)
-        payload = {
-            "name": friendly_name,
-            "unique_id": sensor_name,
-            "object_id": self._sensor_object_id(sensor_name),
-            "state_topic": self._state_topic(sensor_name),
-            "json_attributes_topic": self._state_topic(sensor_name),
-            "value_template": "{{ value_json.state }}",
-            "device": self._device_payload(user_id),
-            "icon": icon,
-        }
-        if state_class:
-            payload["state_class"] = state_class
-        if unit:
-            payload["unit_of_measurement"] = unit
-        if device_class:
-            payload["device_class"] = device_class
-        if self._publish_mqtt(topic, payload, retain=True):
-            self._published_discovery_topics.add(topic)
+        self.discovery_publisher.publish(sensor_name, user_id, device_class, unit, icon, state_class)
 
     def _publish_sensor_state(
         self,
@@ -175,11 +162,16 @@ class SensorUpdater:
     ):
         if state is None:
             return
-        self._publish_discovery(sensor_name, user_id, device_class, unit, icon, state_class)
-        payload = {"state": state}
-        if extra_attributes:
-            payload.update(extra_attributes)
-        self._publish_mqtt(self._state_topic(sensor_name), payload)
+        self.sensor_state_publisher.publish(
+            sensor_name,
+            user_id,
+            state,
+            unit=unit,
+            icon=icon,
+            device_class=device_class,
+            state_class=state_class,
+            extra_attributes=extra_attributes,
+        )
 
 
     def update_one_userid(
