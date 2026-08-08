@@ -10,6 +10,7 @@ import paho.mqtt.client as mqtt
 from scripts.support.cache_store import CacheStore
 from scripts.support.credentials import mask_user_id
 from scripts.support.db import SqliteDB
+from scripts.support.ha_payloads import HistoryPayloadBuilder
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
 from scripts.const import (
@@ -728,60 +729,49 @@ class SensorUpdater:
         self._log_sensor_update(sensor_name, sensor_state, "kWh" if usage else "CNY")
 
     def update_daily_history_data(self, user_id: str, postfix: str):
-        history = self._get_recent_daily_history(user_id)
-        if history is None:
+        payload = HistoryPayloadBuilder.daily_history(self._get_recent_daily_history(user_id))
+        if payload is None:
             return
 
         sensor_name = DAILY_HISTORY_SENSOR_NAME + postfix
         self._publish_sensor_state(
             sensor_name,
             user_id,
-            history["state"],
+            payload["state"],
             unit="kWh",
             icon="mdi:chart-timeline-variant",
             device_class="energy",
             state_class="",
-            extra_attributes={
-                "latest_date": history["latest_date"],
-                "series_days": history["series_days"],
-                "series": history["series"],
-            },
+            extra_attributes=payload["attributes"],
         )
         self._log_sensor_update(
             sensor_name,
-            history["state"],
+            payload["state"],
             "kWh",
-            latest_date=history["latest_date"],
-            series_days=history["series_days"],
+            **payload["log"],
         )
 
     def update_monthly_history_data(self, user_id: str, postfix: str):
-        series = self._get_recent_monthly_history(user_id)
-        if not series:
+        payload = HistoryPayloadBuilder.monthly_history(self._get_recent_monthly_history(user_id))
+        if payload is None:
             return
 
-        latest = series[-1]
         sensor_name = MONTHLY_HISTORY_SENSOR_NAME + postfix
         self._publish_sensor_state(
             sensor_name,
             user_id,
-            latest["usage"],
+            payload["state"],
             unit="kWh",
             icon="mdi:chart-bar",
             device_class="",
             state_class="measurement",
-            extra_attributes={
-                "latest_month": latest["month"],
-                "series_months": len(series),
-                "series": series,
-            },
+            extra_attributes=payload["attributes"],
         )
         self._log_sensor_update(
             sensor_name,
-            latest["usage"],
+            payload["state"],
             "kWh",
-            latest_month=latest["month"],
-            series_months=len(series),
+            **payload["log"],
         )
 
     def update_fetch_status(
