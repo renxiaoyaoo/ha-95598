@@ -42,7 +42,7 @@ python3 scripts/tools/syntax_check.py
 `config_doctor.py` is also safe to run because it prints summaries instead of private values:
 
 ```bash
-python3 scripts/tools/config_doctor.py --staged
+python3 scripts/tools/config_doctor.py --all
 ```
 
 ## Logging

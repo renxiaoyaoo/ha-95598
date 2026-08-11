@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -46,6 +47,44 @@ def _run_tariff_check() -> DoctorCheck:
     return DoctorCheck("tariff config", result.ok, config_path.name)
 
 
+def _read_env_keys(env_path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not env_path.exists():
+        return values
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        values[key] = value.strip().strip("\"'")
+    return values
+
+
+def _run_env_check(root: Path = ROOT) -> DoctorCheck:
+    env_path = root / ".env"
+    if not env_path.exists():
+        return DoctorCheck("runtime env", False, ".env missing")
+
+    values = _read_env_keys(env_path)
+    has_credential_pool = bool(values.get("LOGIN_CREDENTIALS"))
+    missing = []
+    if not has_credential_pool:
+        for key in ("ACCOUNT", "PASSWORD"):
+            if not values.get(key):
+                missing.append(key)
+
+    if missing:
+        return DoctorCheck("runtime env", False, "missing " + ",".join(missing))
+
+    if not values.get("MQTT_HOST"):
+        return DoctorCheck("runtime env", True, "mqtt disabled")
+    return DoctorCheck("runtime env", True)
+
+
 def _run_compose_check() -> DoctorCheck:
     try:
         subprocess.run(
@@ -70,6 +109,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run safe local project checks without printing private config values.")
     parser.add_argument("--staged", action="store_true", help="Also check staged files for privacy risks.")
     parser.add_argument("--compose", action="store_true", help="Also validate docker compose with config --quiet.")
+    parser.add_argument("--env", action="store_true", help="Also check .env presence and required keys without printing values.")
+    parser.add_argument("--all", "--doctor-all", action="store_true", help="Run the standard onboarding checks.")
     args = parser.parse_args()
 
     checks = [
@@ -77,9 +118,11 @@ def main() -> int:
         _run_syntax_check(),
         _run_tariff_check(),
     ]
+    if args.all or args.env:
+        checks.append(_run_env_check())
     if args.staged:
         checks.append(_run_privacy_check(staged=True))
-    if args.compose:
+    if args.all or args.compose:
         checks.append(_run_compose_check())
 
     for check in checks:

@@ -3,13 +3,13 @@
 Start with the safe doctor command:
 
 ```bash
-python3 scripts/tools/config_doctor.py
+python3 scripts/tools/config_doctor.py --all
 ```
 
-For Docker Compose validation without printing expanded private config:
+For staged privacy checks before a commit:
 
 ```bash
-python3 scripts/tools/config_doctor.py --compose
+python3 scripts/tools/config_doctor.py --staged
 ```
 
 ## Login Fails

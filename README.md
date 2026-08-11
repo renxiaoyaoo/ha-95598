@@ -78,15 +78,17 @@
 - Home Assistant MQTT 集成和一个可访问的 MQTT Broker。
 - 至少 `1 GB` 可用内存；预构建镜像建议预留 `3 GB+` 磁盘空间。
 
-## 快速开始
+## 最快部署
 
-1. 准备配置文件。
+普通 Docker 部署只需要三步。
+
+1. 复制最小配置。
 
 ```bash
-cp example.env .env
+cp .env.example .env
 ```
 
-2. 编辑 `.env`，至少填写：
+2. 编辑 `.env`，至少填写 95598 账号和密码。需要发布到 Home Assistant 时再填写 MQTT。
 
 ```env
 ACCOUNT="你的95598账号"
@@ -94,48 +96,66 @@ PASSWORD="你的95598密码"
 MQTT_HOST="你的MQTT地址"
 ```
 
-如果暂时不接 Home Assistant，可以留空：
+暂时不接 Home Assistant 时可以留空：
 
 ```env
 MQTT_HOST=""
 ```
 
-3. 启动服务。
+3. 启动服务并跑一次安全诊断。
 
 使用已发布镜像：
 
 ```bash
 docker compose -f docker-compose.image.yml up -d ha-95598
-docker compose -f docker-compose.image.yml logs -f ha-95598
+python3 scripts/tools/config_doctor.py --all
 ```
 
 本地构建：
 
 ```bash
 docker compose up -d --build ha-95598
-docker compose logs -f ha-95598
+python3 scripts/tools/config_doctor.py --all
 ```
 
 Home Assistant OS / Supervised 用户也可以使用 add-on，说明见 [addon/ha-95598/README.md](addon/ha-95598/README.md)。
 
+查看日志：
+
+```bash
+docker compose logs -f ha-95598
+```
+
 ## 配置
 
-主要配置在 [example.env](example.env)，最小 placeholder 示例在 [.env.example](.env.example)。
+最小配置在 [.env.example](.env.example)。完整配置示例在 [example.env](example.env)。
 
-常用配置：
+### 必填
 
 | 配置 | 说明 |
 | --- | --- |
 | `ACCOUNT` / `PASSWORD` | 95598 登录账号和密码 |
-| `LOGIN_CREDENTIALS` | 可选登录凭据池 |
+| `LOGIN_CREDENTIALS` | 可选；账号池。配置后可不填 `ACCOUNT` / `PASSWORD` |
+
+### 常用可选
+
+| 配置 | 说明 |
+| --- | --- |
 | `IGNORE_USER_ID` | 可选忽略指定户号 |
-| `MQTT_HOST` / `MQTT_PORT` | MQTT Broker |
+| `MQTT_HOST` / `MQTT_PORT` | MQTT Broker；留空则不发布 HA 实体 |
 | `JOB_START_TIME` / `JOB_TIMES` | 每天同步时间和次数 |
 | `DAILY_USAGE_WINDOW_DAYS` | 每次同步最近 `7` 或 `30` 天 |
 | `PUBLISH_TOU_DETAIL_SENSORS` | 是否发布分时细项实体 |
 | `TOU_PRICE_CONFIG` | 私人电价配置路径 |
-| `HA_ENERGY_BACKFILL_ENABLED` | 是否启用 HA 能源面板 recorder 回填 |
 | `NOTIFIER` | 通知器，当前支持 `none` / `telegram` |
+
+### 高级可选
+
+| 配置 | 说明 |
+| --- | --- |
+| `HA_ENERGY_BACKFILL_ENABLED` | 是否启用 HA 能源面板 recorder 回填 |
+| `HA_RECORDER_DB_PATH` | Home Assistant recorder 数据库路径 |
+| `CAPTCHA_POINT_CLICK_MAX_REFRESHES` | 点选验证码低置信刷新次数 |
 
 > [!IMPORTANT]
 > 日电费会按电价配置估算。仓库默认电价只是示例，不一定适合你的地区。私人电价建议放在被 `.gitignore` 忽略的 `config/tou_price_config.local.json`，并通过 `TOU_PRICE_CONFIG` 指向它。
@@ -192,10 +212,10 @@ docker compose run --rm ha-95598 python3 -m scripts.show_db
 docker compose run --rm ha-95598 python3 -m scripts.fetch_daily_range --start 2026-01-01 --end 2026-01-31
 ```
 
-安全诊断：
+一键安全诊断：
 
 ```bash
-python3 scripts/tools/config_doctor.py
+python3 scripts/tools/config_doctor.py --all
 ```
 
 提交前检查：

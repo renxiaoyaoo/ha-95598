@@ -48,14 +48,8 @@ These files can contain private data. They are ignored by git and should not be 
 
 ## Diagnostics
 
-Run safe local checks:
+Run safe onboarding checks:
 
 ```bash
-python3 scripts/tools/config_doctor.py
-```
-
-Validate Docker Compose without printing expanded `.env` values:
-
-```bash
-python3 scripts/tools/config_doctor.py --compose
+python3 scripts/tools/config_doctor.py --all
 ```
