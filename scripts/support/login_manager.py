@@ -228,7 +228,7 @@ class LoginManager:
             self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_CODE_BUTTON)
             code = input("Input your phone verification code: ")
             input_elements[3].send_keys(code)
-            logging.info("input_elements verification code: %s.\r", code)
+            logging.info("input_elements verification code: ******\r")
             self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_LOGIN_BUTTON)
             self._step_sleep(driver, "after_submit_phone_code_login")
             logging.info("Click login button.\r")

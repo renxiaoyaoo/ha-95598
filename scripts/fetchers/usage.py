@@ -242,13 +242,13 @@ class UsageFetcher:
         for row in days_element:
             cells = row.find_elements(By.XPATH, selectors.ROW_CELLS)
             if len(cells) < 2:
-                logging.debug("Skip non-data daily row, td count=%s, text=%s", len(cells), row.text)
+                logging.debug("Skip non-data daily row, td count=%s", len(cells))
                 continue
 
             day_elements = row.find_elements(By.XPATH, selectors.ROW_DATE_CELL)
             usage_elements = row.find_elements(By.XPATH, selectors.ROW_USAGE_CELL)
             if not day_elements or not usage_elements:
-                logging.debug("Skip malformed daily row, text=%s", row.text)
+                logging.debug("Skip malformed daily row.")
                 continue
 
             day = (day_elements[0].text or "").strip()
