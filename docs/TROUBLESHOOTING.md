@@ -64,6 +64,8 @@ The probe writes summaries under `data/pages/`:
 
 These files are local diagnostics and can include private page data. Do not commit or share them.
 
+Error screenshots are saved by default. Full page HTML error traces are disabled unless `DEBUG_ERROR_TRACE_DETAIL=true` is set.
+
 ## No New Daily Data
 
 95598 can delay daily usage, TOU, or charge data. A delayed daily charge is not always a fetch failure.

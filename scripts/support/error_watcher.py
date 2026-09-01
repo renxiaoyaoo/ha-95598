@@ -87,18 +87,19 @@ class ErrorWatcher:
     def _save_debug_artifacts(self, driver, base_path: Path, error: Exception) -> None:
         current_url = self._read_driver_value(lambda: driver.current_url, "current_url")
         current_title = self._read_driver_value(lambda: driver.title, "title")
-        page_source = self._read_driver_value(lambda: driver.page_source or "", "page_source")
         debug_state = self._collect_debug_state(driver)
         browser_logs = self._read_driver_logs(driver, "browser")
         performance_logs = self._read_driver_logs(driver, "performance", keep_last=50)
         cookie_summary = self._collect_cookies(driver)
         storage_state = self._collect_storage_state(driver)
 
-        self._write_text(
-            base_path.with_suffix(".html.txt"),
-            f"url={current_url}\ntitle={current_title}\nerror={error!r}\n\n{page_source}",
-            "error html artifact",
-        )
+        if self._detail_trace_enabled():
+            page_source = self._read_driver_value(lambda: driver.page_source or "", "page_source")
+            self._write_text(
+                base_path.with_suffix(".html.txt"),
+                f"url={current_url}\ntitle={current_title}\nerror={error!r}\n\n{page_source}",
+                "error html artifact",
+            )
         self._write_text(
             base_path.with_suffix(".meta.txt"),
             "url={}\ntitle={}\nerror={}\n\n{}".format(
@@ -195,7 +196,7 @@ class ErrorWatcher:
                       type: el.type || '',
                       class_name: el.className || '',
                       placeholder: el.placeholder || '',
-                      value: el.value || ''
+                      has_value: Boolean(el.value)
                     })),
                   visible_buttons: Array.from(document.querySelectorAll('button, [role="button"]'))
                     .filter(visible)
@@ -207,6 +208,10 @@ class ErrorWatcher:
             )
         except Exception as exc:
             return {"failed_to_collect_debug_state": str(exc)}
+
+    @staticmethod
+    def _detail_trace_enabled() -> bool:
+        return os.getenv("DEBUG_ERROR_TRACE_DETAIL", "false").lower() == "true"
 
     @staticmethod
     def _write_text(path: Path, content: str, label: str) -> None:
