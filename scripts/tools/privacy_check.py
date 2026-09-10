@@ -12,6 +12,9 @@ TG_TOKEN_RE = re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PASSWORD_VALUE_RE = re.compile(r"(?i)(password|passwd|pwd)[\"']?\s*[:=]\s*[\"']([^\"'\s#]{8,})[\"']")
+UNQUOTED_PASSWORD_VALUE_RE = re.compile(
+    r"(?i)^\s*(password|passwd|pwd)\s*[:=]\s*([^\"'\s#][^\s#]{7,})\s*(?:#.*)?$"
+)
 
 SAFE_EMAIL_DOMAINS = {"example.com", "example.org", "example.net", "invalid.local"}
 SAFE_VALUES = {
@@ -26,6 +29,16 @@ SAFE_VALUES = {
 }
 SKIP_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".db", ".sqlite", ".pyc", ".zip", ".tar", ".gz",
+}
+ALLOWED_PUBLIC_BINARY_FILES = {
+    "examples/energy-dashboard/daily-chart.png",
+    "examples/energy-dashboard/energy-panel.png",
+    "examples/energy-dashboard/entities.png",
+}
+PRIVATE_RUNTIME_NAMES = {
+    "ha_95598_cache.json",
+    "ha_95598_session.json",
+    "login_qr_code.png",
 }
 
 
@@ -50,6 +63,33 @@ def is_text_file(path: Path) -> bool:
         return True
     except (UnicodeDecodeError, FileNotFoundError):
         return False
+
+
+def scan_path(path: Path) -> list[tuple[str, int]]:
+    """Reject private runtime artifacts even when their contents are binary."""
+
+    try:
+        relative = path.relative_to(ROOT).as_posix()
+    except ValueError:
+        relative = path.as_posix()
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+
+    if relative == ".env" or relative.startswith(".env.") and relative != ".env.example":
+        return [("private_env_file", 0)]
+    if relative == "data" or relative.startswith("data/"):
+        return [("runtime_data", 0)]
+    if relative == "config/tou_price_config.local.json":
+        return [("local_price_override", 0)]
+    if name in PRIVATE_RUNTIME_NAMES:
+        return [("private_runtime_file", 0)]
+    if suffix in {".db", ".sqlite", ".sqlite3"}:
+        return [("database_file", 0)]
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"} and relative not in ALLOWED_PUBLIC_BINARY_FILES:
+        return [("unreviewed_image", 0)]
+    if suffix in {".zip", ".tar", ".gz", ".tgz", ".7z"}:
+        return [("unreviewed_archive", 0)]
+    return []
 
 
 def safe_email(value: str) -> bool:
@@ -77,6 +117,9 @@ def scan_line(line: str) -> list[str]:
     for match in PASSWORD_VALUE_RE.finditer(line):
         if not safe_secret_value(match.group(2)):
             findings.append("password_value")
+    match = UNQUOTED_PASSWORD_VALUE_RE.search(line)
+    if match and not safe_secret_value(match.group(2)):
+        findings.append("password_value")
     return findings
 
 
@@ -97,6 +140,9 @@ def main() -> int:
     failed = False
     files = staged_files() if args.staged else tracked_files()
     for path in files:
+        for kind, line_no in scan_path(path):
+            failed = True
+            print(f"{path.relative_to(ROOT)}:{line_no}: possible {kind}")
         if not is_text_file(path):
             continue
         for kind, line_no in scan_file(path):

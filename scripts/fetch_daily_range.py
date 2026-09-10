@@ -48,12 +48,12 @@ def main():
     )
     service = DailyRangeFetchService.from_data_fetcher(fetcher)
     result = service.fetch(args.start, args.end, user_ids=args.user_ids)
-    logging.info("Daily range fetch result: %s", result)
+    logging.info("Daily range fetch completed for %s user(s).", len(result))
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        logging.error("Daily range fetch failed: %s", exc)
+        logging.error("Daily range fetch failed (%s).", type(exc).__name__)
         sys.exit(1)

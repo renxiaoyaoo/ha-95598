@@ -95,11 +95,9 @@ class HaEnergyStatisticsBackfiller:
                 conn.close()
 
             logging.info(
-                "HA energy statistics backfilled: days=%s latest=%s usage_total=%.2f charge_total=%.2f",
+                "HA energy statistics backfilled: days=%s latest=%s",
                 len(daily_rows),
                 daily_rows[-1].day,
-                usage_points[-1].sum,
-                charge_points[-1].sum,
             )
             return True
         except Exception as exc:

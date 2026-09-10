@@ -10,7 +10,6 @@ from scripts.sensor_updater import SensorUpdater
 from scripts.support.error_watcher import ErrorWatcher
 from scripts.support.credentials import LoginCredential, load_login_credentials
 from scripts.support.job_scheduler import run_forever, run_task, schedule_jobs
-from scripts.support.tou_price import TimeOfUsePriceResolver
 
 
 LOCAL_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -52,14 +51,13 @@ def main():
         else:
             logging.info("The current run uses the local environment.")
     except Exception as exc:
-        logging.error("Failed to read runtime configuration: %s", exc)
+        logging.error("Failed to read runtime configuration (%s).", type(exc).__name__)
         sys.exit()
 
     logging.info("The current project version is %s.", config.version)
     logging.info("Configured %s login credential(s).", len(config.credentials))
     current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("The current date is %s.", current_datetime)
-    logging.info("TOU price config path: %s", TimeOfUsePriceResolver().config_path)
 
     error_root = str(LOCAL_DATA_DIR)
     screenshot_dir = str(LOCAL_DATA_DIR / "pages")

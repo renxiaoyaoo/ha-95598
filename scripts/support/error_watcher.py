@@ -80,7 +80,7 @@ class ErrorWatcher:
         try:
             driver.save_screenshot(str(screenshot_path))
             self._save_debug_artifacts(driver, base_path, error)
-            logging.error("Error occurred: %s. Screenshot saved to %s", error, screenshot_path)
+            logging.error("Error occurred (%s). Screenshot saved to %s", type(error).__name__, screenshot_path)
         except Exception as exc:
             logging.error("Failed to save screenshot: %s", exc)
 

@@ -28,7 +28,8 @@ options:
   job_times: 2
   retry_times_limit: 3
   retry_wait_time_offset_unit: 5
-  republish_interval_minutes: 60
+  republish_interval_minutes: 0
+  fetch_attempt_timeout_minutes: 30
   daily_usage_window_days: 7
   publish_tou_detail_sensors: false
   tou_price_config: "config/tou_price_config.json"
@@ -55,9 +56,10 @@ schema:
   mqtt_password: password?
   job_start_time: str
   job_times: int(1,10)
-  retry_times_limit: int(0,10)
+  retry_times_limit: int(1,10)
   retry_wait_time_offset_unit: int(2,30)
   republish_interval_minutes: int(0,1440)
+  fetch_attempt_timeout_minutes: int(5,120)
   daily_usage_window_days: list(7|30)
   publish_tou_detail_sensors: bool
   tou_price_config: str

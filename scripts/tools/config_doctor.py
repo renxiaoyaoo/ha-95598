@@ -27,6 +27,8 @@ def _run_privacy_check(staged: bool) -> DoctorCheck:
     files = privacy_check.staged_files() if staged else privacy_check.tracked_files()
     failed = False
     for path in files:
+        if privacy_check.scan_path(path):
+            failed = True
         if not privacy_check.is_text_file(path):
             continue
         if privacy_check.scan_file(path):

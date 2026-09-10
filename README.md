@@ -144,6 +144,7 @@ docker compose logs -f ha-95598
 | `IGNORE_USER_ID` | 可选忽略指定户号 |
 | `MQTT_HOST` / `MQTT_PORT` | MQTT Broker；留空则不发布 HA 实体 |
 | `JOB_START_TIME` / `JOB_TIMES` | 每天同步时间和次数 |
+| `FETCH_ATTEMPT_TIMEOUT_MINUTES` | 单次抓取超时分钟数，默认 `30` |
 | `DAILY_USAGE_WINDOW_DAYS` | 每次同步最近 `7` 或 `30` 天 |
 | `PUBLISH_TOU_DETAIL_SENSORS` | 是否发布分时细项实体 |
 | `TOU_PRICE_CONFIG` | 私人电价配置路径 |

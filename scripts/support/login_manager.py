@@ -154,15 +154,14 @@ class LoginManager:
                 self._credential_index if attempt == 0 else self._credential_index + 1
             )
             logging.info(
-                "Try interactive login with credential [%s/%s]: %s",
+                "Try interactive login with credential [%s/%s].",
                 attempt + 1,
                 total_credentials,
-                credential.label,
             )
             if self.login(driver, phone_code=phone_code, allow_fallback=False):
                 self._clear_password_login_cooldown()
                 return True
-            logging.info("Login credential %s did not complete password login.", credential.label)
+            logging.info("Login credential [%s/%s] did not complete password login.", attempt + 1, total_credentials)
             if self._password_login_blocked_this_run and attempt + 1 < total_credentials:
                 logging.info("Password login hit RK001; trying the next configured login credential.")
                 self._password_login_blocked_this_run = False
@@ -366,7 +365,7 @@ class LoginManager:
             self._step_sleep(driver, "after_submit_mobile_password_login")
             logging.info("Click mobile login button.\r")
         except Exception as exc:
-            logging.info("Mobile password login form operation failed: %s", exc)
+            logging.info("Mobile password login form operation failed (%s).", type(exc).__name__)
             self._log_page_state(driver, "mobile_password_login_form_failed")
             if not allow_fallback:
                 return False
@@ -395,8 +394,8 @@ class LoginManager:
         if post_login_state == "error":
             error_message = self._get_login_error_message(driver)
             logging.info(
-                "Mobile password login returned a page error without a usable session: %s.",
-                error_message or "<empty>",
+                "Mobile password login returned a page error without a usable session (%s).",
+                "RK001" if self._is_rk001_error(error_message) else "site_error",
             )
             if self._is_rk001_error(error_message):
                 self._record_password_login_cooldown(error_message)

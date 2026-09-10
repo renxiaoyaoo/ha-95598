@@ -1,6 +1,10 @@
 import os
-import sys
 import types
+
+import pytest
+
+import scripts.support.notifier as notifier_module
+from scripts.support.notifier import NoopNotifier, TelegramNotifier, build_notifier
 
 
 class _RequestsStub:
@@ -21,9 +25,12 @@ class _RequestsStub:
 
 
 requests_stub = _RequestsStub()
-sys.modules["requests"] = requests_stub
 
-from scripts.support.notifier import NoopNotifier, TelegramNotifier, build_notifier  # noqa: E402
+
+@pytest.fixture(autouse=True)
+def stub_requests(monkeypatch):
+    requests_stub.calls.clear()
+    monkeypatch.setattr(notifier_module, "requests", requests_stub)
 
 
 def test_build_notifier_defaults_to_noop() -> None:

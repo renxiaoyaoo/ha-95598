@@ -23,6 +23,8 @@ none -> balance -> yearly -> monthly -> daily -> tou -> persist -> billing -> co
 
 If a run is interrupted and restarted on the same day, completed stages can be skipped and cached data can be reused.
 
+Each fetch attempt is limited by `FETCH_ATTEMPT_TIMEOUT_MINUTES` (default `30`). A timed-out attempt follows the normal retry path. Docker Compose also checks a scheduler heartbeat and marks the container unhealthy if the main loop remains blocked for too long.
+
 ## Local State
 
 Runtime state is stored in `data/`:

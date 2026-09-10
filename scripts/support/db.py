@@ -712,7 +712,7 @@ class SqliteDB:
         try:
             return float(text)
         except (TypeError, ValueError):
-            logging.debug("Failed to parse float value: %s", value)
+            logging.debug("Failed to parse a numeric database value.")
             return default
 
     def close_connect(self) -> None:

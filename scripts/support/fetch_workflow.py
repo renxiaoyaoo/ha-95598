@@ -31,11 +31,7 @@ class FetchWorkflow:
                     logging.warning("Get electricity charge balance for %s failed, keep cached balance.", mask_user_id(user_id))
             else:
                 balance = fetched_balance
-                logging.info(
-                    "Get electricity charge balance for %s successfully, balance is %s CNY.",
-                    mask_user_id(user_id),
-                    balance,
-                )
+                logging.info("Updated electricity balance for %s.", mask_user_id(user_id))
                 updater.save_partial_data(user_id, balance=balance)
                 updater.update_progress_stage(user_id, "balance", fetch_date=fetcher._progress_date())
                 progress = updater.get_progress(user_id)
@@ -52,11 +48,11 @@ class FetchWorkflow:
             if yearly_usage is None:
                 logging.error("Get year power usage for %s failed, pass", mask_user_id(user_id))
             else:
-                logging.info("Get year power usage for %s successfully, usage is %s kwh", mask_user_id(user_id), yearly_usage)
+                logging.info("Updated yearly electricity usage for %s.", mask_user_id(user_id))
             if yearly_charge is None:
                 logging.error("Get year power charge for %s failed, pass", mask_user_id(user_id))
             else:
-                logging.info("Get year power charge for %s successfully, yealrly charge is %s CNY", mask_user_id(user_id), yearly_charge)
+                logging.info("Updated yearly electricity charge for %s.", mask_user_id(user_id))
             updater.save_partial_data(user_id, yearly_usage=yearly_usage, yearly_charge=yearly_charge)
             updater.update_progress_stage(user_id, "yearly", fetch_date=fetcher._progress_date())
             progress = updater.get_progress(user_id)
@@ -75,14 +71,7 @@ class FetchWorkflow:
             if month is None:
                 logging.error("Get month power usage for %s failed, pass", mask_user_id(user_id))
             else:
-                for index in range(len(month)):
-                    logging.info(
-                        "Get month power charge for %s successfully, %s usage is %s KWh, charge is %s CNY.",
-                        mask_user_id(user_id),
-                        month[index],
-                        month_usage[index],
-                        month_charge[index],
-                    )
+                logging.info("Updated %s monthly usage row(s) for %s.", len(month), mask_user_id(user_id))
                 updater.save_partial_data(
                     user_id,
                     month_usage=month_usage[-1] if month_usage else None,
@@ -100,12 +89,7 @@ class FetchWorkflow:
             if last_daily_usage is None:
                 logging.error("Get daily power consumption for %s failed, pass", mask_user_id(user_id))
             else:
-                logging.info(
-                    "Get daily power consumption for %s successfully, , %s usage is %s kwh.",
-                    mask_user_id(user_id),
-                    last_daily_date,
-                    last_daily_usage,
-                )
+                logging.info("Updated latest daily usage for %s (%s).", mask_user_id(user_id), last_daily_date)
                 updater.save_partial_data(
                     user_id,
                     last_daily_date=last_daily_date,
@@ -141,12 +125,8 @@ class FetchWorkflow:
 
             if daily_tou_map or any(value is not None for value in (valley_usage, flat_usage, peak_usage, tip_usage)):
                 logging.info(
-                    "Get recent time-of-use power usage for %s successfully, latest valley=%s KWh, flat=%s KWh, peak=%s KWh, tip=%s KWh, days=%s.",
+                    "Updated recent time-of-use data for %s (%s day(s)).",
                     mask_user_id(user_id),
-                    valley_usage,
-                    flat_usage,
-                    peak_usage,
-                    tip_usage,
                     len(daily_tou_map),
                 )
                 updater.save_partial_data(

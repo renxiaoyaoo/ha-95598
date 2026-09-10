@@ -20,6 +20,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Run privacy check
+        run: python3 scripts/tools/privacy_check.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: python3 -m pip install -r requirements-dev.txt
+
+      - name: Run syntax check
+        run: python3 scripts/tools/syntax_check.py
+
+      - name: Run tests
+        run: python3 -m pytest -q
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 

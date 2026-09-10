@@ -14,6 +14,17 @@ services:
       - CONTAINER_TIMEZONE=Asia/Shanghai
       # - LOG_LEVEL=DEBUG
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python3", "-m", "scripts.tools.healthcheck"]
+      interval: 1m
+      timeout: 5s
+      retries: 2
+      start_period: 2m
     working_dir: /app
     volumes:
       - ./data:/app/data

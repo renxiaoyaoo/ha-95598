@@ -44,9 +44,9 @@ class TelegramNotifier:
             )
             if resp.status_code == 200:
                 return True
-            logging.error("Telegram message push failed: %s", resp.text)
+            logging.error("Telegram message push failed with HTTP status %s.", resp.status_code)
         except Exception as exc:
-            logging.exception("Telegram message push exception: %s", exc)
+            logging.error("Telegram message push failed (%s).", type(exc).__name__)
         return False
 
     def send_qr_code(self, qrcode: bytes) -> bool:
@@ -60,9 +60,9 @@ class TelegramNotifier:
             if resp.status_code == 200:
                 logging.info("QRCode sent to Telegram")
                 return True
-            logging.error("Telegram QRCode push failed: %s", resp.text)
+            logging.error("Telegram QRCode push failed with HTTP status %s.", resp.status_code)
         except Exception as exc:
-            logging.exception("Telegram QRCode push exception: %s", exc)
+            logging.error("Telegram QRCode push failed (%s).", type(exc).__name__)
         return False
 
     def send_stale_data_alert(self, user_id: str, latest_date: str, stale_days: int) -> bool:

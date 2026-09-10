@@ -212,6 +212,7 @@ class DataFetcher:
         ErrorWatcher.instance().set_driver(driver)
         updater = self.updater or SensorUpdater()
 
+        failed_user_count = 0
         try:
             self._step_sleep(driver, "after_webdriver_init")
             logging.info("Webdriver initialized.")
@@ -219,6 +220,8 @@ class DataFetcher:
 
             self._step_sleep(driver, "after_login_success")
             user_id_list = self._resolve_user_id_list(driver, updater)
+            if not user_id_list:
+                raise RuntimeError("No user IDs were available after login")
             logging.info("Here are a total of %s userids, which are %s among which %s will be ignored.", len(user_id_list), mask_user_ids(user_id_list), mask_user_ids(self.IGNORE_USER_ID))
             self._step_sleep(driver, "after_get_user_ids")
 
@@ -259,7 +262,7 @@ class DataFetcher:
                     else:
                         logging.info(
                             "Skip opening balance page for %s because today's progress already passed balance stage.",
-                            user_id,
+                            mask_user_id(user_id),
                         )
 
                     (
@@ -296,6 +299,7 @@ class DataFetcher:
 
                     self._step_sleep(driver, f"after_update_user_state_{mask_user_id(user_id)}")
                 except Exception as e:
+                    failed_user_count += 1
                     cached = updater.get_cached_user_data(user_id)
                     updater.update_fetch_status(
                         user_id,
@@ -308,14 +312,23 @@ class DataFetcher:
                         error_type=type(e).__name__,
                     )
                     if userid_index != len(user_id_list) - 1:
-                        logging.info("The current user %s data fetching failed %s, the next user data will be fetched.", mask_user_id(user_id), e)
+                        logging.warning(
+                            "The current user %s data fetching failed (%s); continuing with the next user.",
+                            mask_user_id(user_id),
+                            type(e).__name__,
+                        )
                     else:
-                        logging.info("The user %s data fetching failed, %s", mask_user_id(user_id), e)
+                        logging.warning(
+                            "The user %s data fetching failed (%s).",
+                            mask_user_id(user_id),
+                            type(e).__name__,
+                        )
                         logging.info("Webdriver will quit after processing the user list.")
                     continue
+            if failed_user_count:
+                raise RuntimeError(f"{failed_user_count} user fetch(es) failed")
         except Exception as e:
-            logging.error(
-                f"Webdriver quit abnormly, reason: {e}. {self.RETRY_TIMES_LIMIT} retry times left.")
+            logging.error("Webdriver run failed (%s).", type(e).__name__)
             raise
         finally:
             updater.close()

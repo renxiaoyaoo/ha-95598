@@ -36,7 +36,7 @@ class TimeOfUsePriceResolver:
         if self._config_cache is not None:
             return self._config_cache
         if not self.config_path.exists():
-            logging.warning("TOU price config not found: %s", self.config_path)
+            logging.warning("TOU price config was not found.")
             self._config_cache = {"versions": []}
             return self._config_cache
 

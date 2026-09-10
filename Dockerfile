@@ -74,4 +74,7 @@ COPY scripts /app/scripts
 COPY captcha_solver /app/captcha_solver
 COPY config /app/config
 
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s --retries=2 \
+    CMD python3 -m scripts.tools.healthcheck
+
 CMD ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24", "python3", "-m", "scripts.main"]

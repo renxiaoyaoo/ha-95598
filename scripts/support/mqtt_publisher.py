@@ -36,7 +36,7 @@ class MqttPublisher:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         self._connected = rc == 0
         if self._connected:
-            logging.info("Connected to MQTT broker %s:%s", self.host, self.port)
+            logging.info("Connected to MQTT broker.")
         else:
             logging.warning("MQTT connection failed with rc=%s", rc)
 
@@ -62,7 +62,8 @@ class MqttPublisher:
             return self._wait_for_connection()
         except Exception as exc:
             self._connected = False
-            logging.warning("Failed to %s MQTT broker %s:%s: %s", "reconnect to" if reconnect else "connect to", self.host, self.port, exc)
+            action = "reconnect to" if reconnect else "connect to"
+            logging.warning("Failed to %s MQTT broker (%s).", action, type(exc).__name__)
             return False
 
     def _ensure_client(self):

@@ -59,7 +59,7 @@ class DataPersister:
             month_usage_before,
         )
         if daily_charge is not None:
-            logging.info("Calculated daily TOU charge for %s: %.2f CNY", last_daily_date, daily_charge)
+            logging.info("Calculated daily TOU charge for %s.", last_daily_date)
         else:
             logging.info("No matching TOU tariff config found for %s", last_daily_date)
         return daily_charge
@@ -155,11 +155,7 @@ class DataPersister:
                             }
                         )
                     self.db.insert_daily_data(payload)
-                    logging.info(
-                        "The electricity consumption of %sKWh on %s has been successfully deposited into the database",
-                        usages[index],
-                        date[index],
-                    )
+                    logging.info("Stored daily electricity data for %s.", date[index])
             elif last_daily_date and last_daily_usage is not None:
                 self.db.insert_daily_data(
                     {

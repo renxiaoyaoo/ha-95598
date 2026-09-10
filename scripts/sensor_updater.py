@@ -112,23 +112,21 @@ class SensorUpdater:
         return re.sub(r"_\d{4}$", "", sensor_name)
 
     def _log_sensor_update(self, sensor_name: str, state, unit: str = "", **attributes) -> None:
-        details = ", ".join(f"{key}={value}" for key, value in attributes.items() if value is not None)
-        if details:
+        if self._public_sensor_name(sensor_name) == FETCH_STATUS_SENSOR_NAME:
+            safe_attributes = {
+                key: value
+                for key, value in attributes.items()
+                if key in {"latest_daily_date", "source_delay_days", "stage", "error_type"} and value is not None
+            }
+            details = ", ".join(f"{key}={value}" for key, value in safe_attributes.items())
             logging.info(
-                "Homeassistant sensor %s state updated: %s%s (%s)",
+                "Homeassistant sensor %s state updated: %s%s",
                 self._public_sensor_name(sensor_name),
                 state,
-                f" {unit}" if unit else "",
-                details,
+                f" ({details})" if details else "",
             )
             return
-
-        logging.info(
-            "Homeassistant sensor %s state updated: %s%s",
-            self._public_sensor_name(sensor_name),
-            state,
-            f" {unit}" if unit else "",
-        )
+        logging.info("Homeassistant sensor %s state updated.", self._public_sensor_name(sensor_name))
 
     def _mqtt_enabled(self) -> bool:
         return self.mqtt_publisher.enabled()
@@ -326,7 +324,7 @@ class SensorUpdater:
                 republished = True
             return republished
         except Exception as e:
-            logging.error(f"Failed to republish data: {e}")
+            logging.error("Failed to republish data (%s).", type(e).__name__)
             return False
 
     def _check_and_notify_stale_data(self, user_id: str, entry: dict):

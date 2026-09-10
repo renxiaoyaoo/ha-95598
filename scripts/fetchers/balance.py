@@ -11,7 +11,7 @@ class BalanceFetcher:
         try:
             balance = normalize_balance(selected_vue_data(driver)).get("balance")
             if balance is not None:
-                logging.info("Read electricity balance from Vue state: %s CNY", balance)
+                logging.info("Read electricity balance from Vue state.")
                 return balance
         except Exception as exc:
             logging.debug("Failed to read balance from Vue state, fallback to DOM: %s", exc)
