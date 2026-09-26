@@ -24,6 +24,7 @@ class DailyRangeFetchService:
         tou_price_resolver,
         updater: Optional[SensorUpdater],
         ignore_user_ids: list[str],
+        user_id_resolver=None,
     ) -> None:
         self.driver_factory = driver_factory
         self.login_manager = login_manager
@@ -35,6 +36,7 @@ class DailyRangeFetchService:
         self.tou_price_resolver = tou_price_resolver
         self.updater = updater or SensorUpdater()
         self.ignore_user_ids = ignore_user_ids
+        self.user_id_resolver = user_id_resolver or navigator.get_user_ids
         self.usage_page = UsagePage(
             navigator=navigator,
             log_page_state=log_page_state,
@@ -48,6 +50,7 @@ class DailyRangeFetchService:
 
     @classmethod
     def from_data_fetcher(cls, fetcher):
+        updater = fetcher.updater or SensorUpdater()
         return cls(
             driver_factory=fetcher.create_webdriver,
             login_manager=fetcher.login_manager,
@@ -56,8 +59,9 @@ class DailyRangeFetchService:
             log_page_state=fetcher.log_page_state,
             db=fetcher.db,
             tou_price_resolver=fetcher.tou_price_resolver,
-            updater=fetcher.updater,
+            updater=updater,
             ignore_user_ids=fetcher.IGNORE_USER_ID,
+            user_id_resolver=lambda driver: fetcher._resolve_user_id_list(driver, updater),
         )
 
     def fetch(self, start_date: str, end_date: str, user_ids: Optional[list[str]] = None):
@@ -69,7 +73,7 @@ class DailyRangeFetchService:
             self.login_manager.restore_or_login(driver)
             self.step_sleep(driver, "after_range_login_success")
 
-            discovered_user_ids = self.navigator.get_user_ids(driver)
+            discovered_user_ids = self.user_id_resolver(driver)
             target_user_ids = user_ids or discovered_user_ids
             results = {}
 
@@ -153,6 +157,7 @@ class DailyRangeFetchService:
                 persisted_count += 1
 
             for month in sorted(touched_months):
+                self._recalculate_month_daily_charges(month)
                 billing.upsert_calculated_from_daily(month)
             for year in sorted(touched_years):
                 billing.refresh_year(year)
@@ -160,6 +165,22 @@ class DailyRangeFetchService:
             self.db.close_connect()
 
         return persisted_count
+
+    def _recalculate_month_daily_charges(self, month: str) -> None:
+        month_usage_before = 0.0
+        for row in self.db.get_daily_rows_for_month(month):
+            total_charge = self.tou_price_resolver.calculate_daily_charge(
+                row["date"],
+                row["valley_usage"],
+                row["flat_usage"],
+                row["peak_usage"],
+                row["tip_usage"],
+                month_usage_before,
+            )
+            if total_charge is not None:
+                row["total_charge"] = round(total_charge, 2)
+                self.db.insert_daily_data(row)
+            month_usage_before += row["total_usage"]
 
     def _publish_refresh(self, user_id: str) -> None:
         if self.db is None or not self.db.connect_user_db(user_id):

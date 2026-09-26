@@ -4,10 +4,14 @@ from scripts.support import job_scheduler
 class FailingFetcher:
     def __init__(self) -> None:
         self.calls = 0
+        self.stale_checks = 0
 
     def fetch(self) -> None:
         self.calls += 1
         raise ValueError("private details must not affect retry behavior")
+
+    def check_cached_stale_data(self) -> None:
+        self.stale_checks += 1
 
 
 def test_run_task_retries_failed_fetch(monkeypatch) -> None:
@@ -18,6 +22,7 @@ def test_run_task_retries_failed_fetch(monkeypatch) -> None:
 
     assert job_scheduler.run_task(fetcher, 2) is False
     assert fetcher.calls == 2
+    assert fetcher.stale_checks == 1
 
 
 def test_invalid_fetch_timeout_uses_safe_default(monkeypatch) -> None:

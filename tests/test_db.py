@@ -304,6 +304,28 @@ def test_recent_daily_history_default_keeps_180_days_with_usage_and_charge_only(
         os.environ.pop("DB_NAME", None)
 
 
+def test_missing_daily_dates_finds_only_gaps_inside_existing_history(tmp_path) -> None:
+    db_path = tmp_path / "history_gaps.db"
+    os.environ["DB_NAME"] = str(db_path)
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user") is True
+        for date_text in ("2026-09-01", "2026-09-02", "2026-09-05"):
+            assert db.insert_daily_data(
+                {
+                    "date": date_text,
+                    "total_usage": 1.0,
+                    "total_charge": 0.5,
+                }
+            )
+
+        assert db.get_missing_daily_dates(days=30) == ["2026-09-03", "2026-09-04"]
+        assert db.get_missing_daily_dates(days=2) == ["2026-09-04"]
+    finally:
+        db.close_connect()
+        os.environ.pop("DB_NAME", None)
+
+
 def test_recent_monthly_history_default_keeps_12_months(tmp_path) -> None:
     db_path = tmp_path / "monthly_history_window.db"
     os.environ["DB_NAME"] = str(db_path)

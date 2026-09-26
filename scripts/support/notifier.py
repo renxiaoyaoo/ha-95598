@@ -15,6 +15,10 @@ class Notifier(Protocol):
 
     def send_stale_data_alert(self, user_id: str, latest_date: str, stale_days: int) -> bool: ...
 
+    def send_history_gap_alert(
+        self, user_id: str, first_missing_date: str, last_missing_date: str, missing_days: int
+    ) -> bool: ...
+
 
 @dataclass
 class NoopNotifier:
@@ -22,6 +26,11 @@ class NoopNotifier:
         return False
 
     def send_stale_data_alert(self, user_id: str, latest_date: str, stale_days: int) -> bool:
+        return False
+
+    def send_history_gap_alert(
+        self, user_id: str, first_missing_date: str, last_missing_date: str, missing_days: int
+    ) -> bool:
         return False
 
 
@@ -79,6 +88,27 @@ class TelegramNotifier:
                 mask_user_id(user_id),
                 latest_date,
                 stale_days,
+            )
+            return True
+        return False
+
+    def send_history_gap_alert(
+        self, user_id: str, first_missing_date: str, last_missing_date: str, missing_days: int
+    ) -> bool:
+        message = (
+            "国网日数据缺失告警\n"
+            f"用户号：{mask_user_id(user_id)}\n"
+            f"缺失范围：{first_missing_date} 至 {last_missing_date}\n"
+            f"缺失天数：{missing_days}天\n"
+            "请执行日期范围补抓或检查国网历史数据。"
+        )
+        if self._send_message(message):
+            logging.info(
+                "Telegram daily history gap notice has been sent for user %s, range=%s~%s, missing_days=%s.",
+                mask_user_id(user_id),
+                first_missing_date,
+                last_missing_date,
+                missing_days,
             )
             return True
         return False

@@ -10,6 +10,7 @@ from scripts.support.db import SqliteDB
 from scripts.support.fetch_progress import FETCH_STAGES as ALL_FETCH_STAGES
 from scripts.support.ha_mqtt_publisher import HaDiscoveryPublisher, SensorStatePublisher
 from scripts.support.ha_payloads import HistoryPayloadBuilder
+from scripts.support.history_gap_alert import HistoryGapAlertChecker
 from scripts.support.mqtt_publisher import MqttPublisher
 from scripts.support.notifier import build_notifier
 from scripts.support.sensor_catalog import TOU_DAILY_SENSORS, TOU_PERIOD_SENSORS, tou_detail_enabled
@@ -78,6 +79,7 @@ class SensorUpdater:
         self.user_state_cache = UserStateCache(self.cache_store)
         self.db = SqliteDB()
         self.stale_alert_checker = StaleDataAlertChecker(self.notifier, self.update_progress)
+        self.history_gap_alert_checker = HistoryGapAlertChecker(self.notifier, self.update_progress, self.db)
         self.discovery_publisher = HaDiscoveryPublisher(
             discovery_prefix=self.discovery_prefix,
             state_prefix=self.state_prefix,
@@ -209,7 +211,9 @@ class SensorUpdater:
             tip_usage,
         )
         if notify_stale:
-            self._check_and_notify_stale_data(user_id, self.cache_store.load().get(user_id, {}))
+            entry = self.cache_store.load().get(user_id, {})
+            self._check_and_notify_stale_data(user_id, entry)
+            self._check_and_notify_history_gaps(user_id, entry)
         postfix = f"_{user_id[-4:]}"
         if balance is not None:
             self.update_balance(user_id, postfix, balance)
@@ -329,6 +333,15 @@ class SensorUpdater:
 
     def _check_and_notify_stale_data(self, user_id: str, entry: dict):
         self.stale_alert_checker.check(user_id, entry)
+
+    def _check_and_notify_history_gaps(self, user_id: str, entry: dict):
+        self.history_gap_alert_checker.check(user_id, entry)
+
+    def check_cached_stale_data(self, ignored_user_ids: list[str] | None = None) -> None:
+        ignored = set(ignored_user_ids or [])
+        for user_id, entry in self.cache_store.load().items():
+            if user_id not in ignored and isinstance(entry, dict):
+                self._check_and_notify_stale_data(user_id, entry)
 
     def update_last_daily_usage(self, user_id: str, postfix: str, last_daily_date: str, sensorState: float):
         sensorName = DAILY_USAGE_SENSOR_NAME + postfix

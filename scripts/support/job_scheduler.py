@@ -105,6 +105,12 @@ def run_task(data_fetcher, retry_times_limit: int):
                     retry_times_limit - retry_times,
                 )
         logging.error("Scheduled state-refresh task failed after %s attempt(s).", retry_times_limit)
+        stale_check = getattr(data_fetcher, "check_cached_stale_data", None)
+        if callable(stale_check):
+            try:
+                stale_check()
+            except Exception as exc:
+                logging.error("Cached stale-data check failed (%s).", type(exc).__name__)
     finally:
         touch_scheduler_heartbeat()
         run_captcha_maintenance(DATA_DIR)

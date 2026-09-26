@@ -2,7 +2,7 @@ import logging
 from scripts.support.credentials import mask_user_id
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -531,6 +531,77 @@ class SqliteDB:
                 "series_days": len(series),
                 "series": series,
             }
+        finally:
+            cursor.close()
+
+    def get_missing_daily_dates(self, days: int = 30) -> list[str]:
+        if self.connect is None or self.user_id is None:
+            logging.error("Database connection is not established.")
+            return []
+
+        cursor = self.connect.cursor()
+        try:
+            cursor.execute(
+                f"SELECT MIN(date), MAX(date) FROM {self.DAILY_TABLE} WHERE user_id = ?",
+                (self.user_id,),
+            )
+            row = cursor.fetchone()
+            earliest_text, latest_text = row if row else (None, None)
+            if not earliest_text or not latest_text:
+                return []
+
+            earliest = datetime.strptime(earliest_text, "%Y-%m-%d").date()
+            latest = datetime.strptime(latest_text, "%Y-%m-%d").date()
+            start = max(earliest, latest - timedelta(days=max(days, 2) - 1))
+            cursor.execute(
+                f"""
+                SELECT date
+                FROM {self.DAILY_TABLE}
+                WHERE user_id = ? AND date BETWEEN ? AND ?
+                """,
+                (self.user_id, start.isoformat(), latest.isoformat()),
+            )
+            present = {item[0] for item in cursor.fetchall()}
+            return [
+                (start + timedelta(days=offset)).isoformat()
+                for offset in range((latest - start).days + 1)
+                if (start + timedelta(days=offset)).isoformat() not in present
+            ]
+        except (TypeError, ValueError, sqlite3.Error) as exc:
+            logging.warning("Failed to inspect daily history continuity (%s).", type(exc).__name__)
+            return []
+        finally:
+            cursor.close()
+
+    def get_daily_rows_for_month(self, month: str) -> list[dict[str, Any]]:
+        if self.connect is None or self.user_id is None:
+            logging.error("Database connection is not established.")
+            return []
+
+        cursor = self.connect.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT date, total_usage, total_charge,
+                       valley_usage, flat_usage, peak_usage, tip_usage
+                FROM {self.DAILY_TABLE}
+                WHERE user_id = ? AND substr(date, 1, 7) = ?
+                ORDER BY date
+                """,
+                (self.user_id, str(month).strip()),
+            )
+            return [
+                {
+                    "date": row[0],
+                    "total_usage": self._safe_float(row[1], default=0.0),
+                    "total_charge": self._safe_float(row[2], default=None),
+                    "valley_usage": self._safe_float(row[3], default=0.0),
+                    "flat_usage": self._safe_float(row[4], default=0.0),
+                    "peak_usage": self._safe_float(row[5], default=0.0),
+                    "tip_usage": self._safe_float(row[6], default=0.0),
+                }
+                for row in cursor.fetchall()
+            ]
         finally:
             cursor.close()
 

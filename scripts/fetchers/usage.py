@@ -60,11 +60,7 @@ class UsageFetcher:
             )
             usage_data = normalize_usage(selected_vue_data(driver))
             if usage_data.get("yearly_usage") is not None:
-                logging.info(
-                    "Read yearly usage data from Vue state: usage=%s, charge=%s",
-                    usage_data.get("yearly_usage"),
-                    usage_data.get("yearly_charge"),
-                )
+                logging.info("Read yearly usage data from Vue state.")
                 return usage_data.get("yearly_usage"), usage_data.get("yearly_charge")
         except Exception as exc:
             logging.error("The yearly data get failed : %s", exc)

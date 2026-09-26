@@ -48,6 +48,15 @@ def test_telegram_notifier_sends_stale_message() -> None:
     assert requests_stub.calls[-1]["url"].endswith("/bottest_token/sendMessage")
 
 
+def test_telegram_notifier_sends_history_gap_message() -> None:
+    notifier = TelegramNotifier(bot_token="test_token", chat_id="test_chat_id")
+    assert notifier.send_history_gap_alert("test_user", "2026-09-09", "2026-09-17", 9) is True
+    request = requests_stub.calls[-1]
+    assert request["url"].endswith("/bottest_token/sendMessage")
+    assert "2026-09-09" in request["json"]["text"]
+    assert "test_user" not in request["json"]["text"]
+
+
 def test_telegram_notifier_sends_qr_code() -> None:
     notifier = TelegramNotifier(bot_token="test_token", chat_id="test_chat_id")
     assert notifier.send_qr_code(b"fake_png") is True

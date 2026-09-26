@@ -334,6 +334,14 @@ class DataFetcher:
             updater.close()
             driver.quit()
 
+    def check_cached_stale_data(self) -> None:
+        updater = self.updater or SensorUpdater()
+        try:
+            updater.check_cached_stale_data(self.IGNORE_USER_ID)
+        finally:
+            if self.updater is None:
+                updater.close()
+
     def _sync_monthly_bill_tou(self, driver, user_id: str):
         return self.monthly_bill_fetcher.sync(driver, user_id)
 
