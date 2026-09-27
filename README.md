@@ -143,6 +143,7 @@ docker compose logs -f ha-95598
 | --- | --- |
 | `IGNORE_USER_ID` | 可选忽略指定户号 |
 | `MQTT_HOST` / `MQTT_PORT` | MQTT Broker；留空则不发布 HA 实体 |
+| `MQTT_PUBLISH_TIMEOUT_SECONDS` | 单条 MQTT 发布最长等待秒数，默认 `10` |
 | `JOB_START_TIME` / `JOB_TIMES` | 每天同步时间和次数 |
 | `FETCH_ATTEMPT_TIMEOUT_MINUTES` | 单次抓取超时分钟数，默认 `30` |
 | `DAILY_USAGE_WINDOW_DAYS` | 每次同步最近 `7` 或 `30` 天 |
@@ -157,6 +158,7 @@ docker compose logs -f ha-95598
 | --- | --- |
 | `HA_ENERGY_BACKFILL_ENABLED` | 是否启用 HA 能源面板 recorder 回填 |
 | `HA_RECORDER_DB_PATH` | Home Assistant recorder 数据库路径 |
+| `HA_ENERGY_BACKFILL_BACKUP_KEEP` | recorder 自动备份保留份数，默认 `2` |
 | `CAPTCHA_POINT_CLICK_MAX_REFRESHES` | 点选验证码低置信刷新次数 |
 
 > [!IMPORTANT]
@@ -270,6 +272,6 @@ python3.12 -m venv .venv
 
 - 没有 MQTT Broker 也能运行，只是不发布 HA 实体。
 - 二维码登录图片只保存在本地 `data/login_qr_code.png`。
-- Telegram 只用于登录二维码和数据停更告警。
+- Telegram 只用于登录二维码、数据停更和历史缺口告警。
 - 95598 网站可能延迟更新日数据或账单，这不一定是抓取失败。
 - Selenium 网页自动化依赖 95598 当前页面结构，官网改版后可能需要维护选择器。

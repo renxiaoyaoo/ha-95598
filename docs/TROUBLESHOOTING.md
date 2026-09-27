@@ -99,4 +99,4 @@ HA_ENERGY_BACKFILL_ENABLED=true
 HA_RECORDER_DB_PATH=/ha-config/home-assistant_v2.db
 ```
 
-Use `HA_ENERGY_BACKFILL_BACKUP=true` the first time.
+Use `HA_ENERGY_BACKFILL_BACKUP=true` the first time. The service keeps the newest two backups by default; adjust `HA_ENERGY_BACKFILL_BACKUP_KEEP` when needed.

@@ -13,6 +13,7 @@
 - `mqtt_host`：MQTT Broker 地址。官方 Mosquitto Add-on 通常是 `core-mosquitto`。
 - `mqtt_port`：MQTT 端口，默认 `1883`。
 - `mqtt_username` / `mqtt_password`：MQTT 认证信息，没有认证可留空。
+- `mqtt_publish_timeout_seconds`：单条 MQTT 发布最长等待秒数，默认 `10`。
 
 ### 同步
 
@@ -26,7 +27,9 @@
 
 - `login_fallback`：密码登录失败或验证码无法自动通过时是否使用二维码兜底。
 - `captcha_point_click_max_refreshes`：点选验证码低置信或失败后的最大刷新次数。
-- `notifier`：可选 `telegram`，用于推送登录二维码和数据停更告警。
+- `notifier`：可选 `telegram`，用于推送登录二维码、数据停更和历史缺口告警。
+- `stale_data_alert_days`：最新日数据落后多少天后告警。
+- `history_gap_alert_days`：检查最近多少天内的日历史缺口。
 
 ## 重要说明
 

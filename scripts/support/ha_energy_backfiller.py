@@ -10,6 +10,7 @@ from scripts.tools.backfill_ha_energy_statistics import (
     build_daily_boundary_points,
     load_daily_rows,
     normalize_sum_to_state,
+    prune_backups,
 )
 
 
@@ -49,6 +50,7 @@ class HaEnergyStatisticsBackfiller:
         reconcile_monthly = self._truthy("HA_ENERGY_BACKFILL_RECONCILE_MONTHLY", "true")
         clamp_after_last = self._truthy("HA_ENERGY_BACKFILL_CLAMP_AFTER_LAST", "true")
         create_backup = self._truthy("HA_ENERGY_BACKFILL_BACKUP", "false")
+        backup_keep = self._positive_int("HA_ENERGY_BACKFILL_BACKUP_KEEP", 2)
 
         try:
             daily_rows = load_daily_rows(self.source_db, user_id, reconcile_monthly_totals=reconcile_monthly)
@@ -71,7 +73,9 @@ class HaEnergyStatisticsBackfiller:
                     return False
 
                 if create_backup:
-                    logging.info("HA recorder backup created at %s", backup_db(ha_db))
+                    backup_db(ha_db)
+                    removed = prune_backups(ha_db, backup_keep)
+                    logging.info("HA recorder backup created; removed_old_backups=%s", removed)
 
                 usage_result = backfill_one_statistic(
                     conn,
@@ -107,6 +111,14 @@ class HaEnergyStatisticsBackfiller:
     @staticmethod
     def _truthy(name: str, default: str = "false") -> bool:
         return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _positive_int(name: str, default: int) -> int:
+        try:
+            return max(int(os.getenv(name, str(default))), 1)
+        except ValueError:
+            logging.warning("Invalid %s; using %s.", name, default)
+            return default
 
     @staticmethod
     def _find_statistic_id(conn: sqlite3.Connection, user_id: str, metric: str) -> str | None:

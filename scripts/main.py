@@ -52,7 +52,7 @@ def main():
             logging.info("The current run uses the local environment.")
     except Exception as exc:
         logging.error("Failed to read runtime configuration (%s).", type(exc).__name__)
-        sys.exit()
+        sys.exit(1)
 
     logging.info("The current project version is %s.", config.version)
     logging.info("Configured %s login credential(s).", len(config.credentials))

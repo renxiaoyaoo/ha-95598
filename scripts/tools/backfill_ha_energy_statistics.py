@@ -191,6 +191,19 @@ def backup_db(db_path: Path) -> Path:
     return backup_path
 
 
+def prune_backups(db_path: Path, keep: int = 2) -> int:
+    backups = sorted(
+        db_path.parent.glob(f"{db_path.name}.bak.*"),
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+        reverse=True,
+    )
+    removed = 0
+    for backup_path in backups[max(int(keep), 1) :]:
+        backup_path.unlink()
+        removed += 1
+    return removed
+
+
 def upsert_statistics_points(conn: sqlite3.Connection, metadata_id: int, points: list[StatisticPoint]) -> None:
     conn.executemany(
         """

@@ -342,6 +342,14 @@ class DataFetcher:
             if self.updater is None:
                 updater.close()
 
+    def handle_scheduled_failure(self, error_type: str) -> None:
+        updater = self.updater or SensorUpdater()
+        try:
+            updater.mark_cached_fetches_failed(error_type, self.IGNORE_USER_ID)
+        finally:
+            if self.updater is None:
+                updater.close()
+
     def _sync_monthly_bill_tou(self, driver, user_id: str):
         return self.monthly_bill_fetcher.sync(driver, user_id)
 

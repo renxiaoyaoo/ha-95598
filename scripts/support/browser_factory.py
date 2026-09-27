@@ -100,7 +100,8 @@ def create_chromium_driver(driver_wait_time: int):
     browser_language_primary = browser_language.split(",")[0]
 
     chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--no-sandbox")
+    if os.geteuid() == 0 or _truthy_env("BROWSER_DISABLE_SANDBOX"):
+        chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument(f"--window-size={browser_window_size}")
     chrome_options.add_argument(f"--lang={browser_language_primary}")

@@ -42,7 +42,8 @@ These files can contain private data. They are ignored by git and should not be 
 
 ## Failure Recovery
 
-- MQTT publish failures do not delete local history.
+- MQTT publishes stop waiting after `MQTT_PUBLISH_TIMEOUT_SECONDS` and do not delete local history.
+- A scheduled run that exhausts all retries publishes a failed fetch status from cached user state.
 - Login/session failures are retried by the configured login flow.
 - Captcha failures can refresh and retry before falling back.
 - If 95598 delays daily charge or TOU data, the next successful run can fill missing local rows.

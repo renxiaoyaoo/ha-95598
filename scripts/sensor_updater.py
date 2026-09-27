@@ -73,6 +73,7 @@ class SensorUpdater:
             client_id=self.mqtt_client_id,
             qos=int(os.getenv("MQTT_QOS", 1)),
             retain=os.getenv("MQTT_RETAIN", "true").lower() == "true",
+            publish_timeout_seconds=float(os.getenv("MQTT_PUBLISH_TIMEOUT_SECONDS", "10")),
         )
         self.notifier = build_notifier()
         self.cache_store = CacheStore(ROOT_DIR / "data" / "ha_95598_cache.json")
@@ -342,6 +343,36 @@ class SensorUpdater:
         for user_id, entry in self.cache_store.load().items():
             if user_id not in ignored and isinstance(entry, dict):
                 self._check_and_notify_stale_data(user_id, entry)
+
+    def mark_cached_fetches_failed(
+        self,
+        error_type: str,
+        ignored_user_ids: list[str] | None = None,
+    ) -> int:
+        ignored = set(ignored_user_ids or [])
+        marked = 0
+        now = datetime.now().isoformat(timespec="seconds")
+        for user_id, entry in self.cache_store.load().items():
+            if user_id in ignored or not isinstance(entry, dict):
+                continue
+            user_data = entry.get("data", {})
+            progress = entry.get("progress", {})
+            try:
+                self.update_fetch_status(
+                    user_id,
+                    f"_{user_id[-4:]}",
+                    "failed",
+                    latest_daily_date=user_data.get("last_daily_date"),
+                    last_success_at=user_data.get("last_fetch_success_at"),
+                    last_attempt_at=now,
+                    stage=progress.get("stage"),
+                    error_type=error_type,
+                )
+                marked += 1
+            except Exception as exc:
+                logging.error("Failed to publish cached fetch status (%s).", type(exc).__name__)
+            self._check_and_notify_stale_data(user_id, entry)
+        return marked
 
     def update_last_daily_usage(self, user_id: str, postfix: str, last_daily_date: str, sensorState: float):
         sensorName = DAILY_USAGE_SENSOR_NAME + postfix

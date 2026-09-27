@@ -35,6 +35,9 @@ jobs:
       - name: Run syntax check
         run: python3 scripts/tools/syntax_check.py
 
+      - name: Audit dependencies
+        run: python3 -m pip_audit -r requirements.txt --progress-spinner off
+
       - name: Run tests
         run: python3 -m pytest -q
 
@@ -75,5 +78,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

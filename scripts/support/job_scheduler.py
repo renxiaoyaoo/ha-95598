@@ -88,6 +88,7 @@ def schedule_jobs(fetcher, updater, job_start_time: str, job_times: int, retry_t
 def run_task(data_fetcher, retry_times_limit: int):
     logging.info("Scheduled state-refresh task started.")
     success = False
+    last_error_type = "UnknownError"
     timeout_seconds = _fetch_attempt_timeout_seconds()
     try:
         for retry_times in range(1, retry_times_limit + 1):
@@ -99,18 +100,26 @@ def run_task(data_fetcher, retry_times_limit: int):
                 logging.info("Scheduled state-refresh task completed successfully.")
                 return True
             except Exception as exc:
+                last_error_type = type(exc).__name__
                 logging.error(
                     "Scheduled state-refresh task failed (%s), %s retry times left.",
                     type(exc).__name__,
                     retry_times_limit - retry_times,
                 )
         logging.error("Scheduled state-refresh task failed after %s attempt(s).", retry_times_limit)
-        stale_check = getattr(data_fetcher, "check_cached_stale_data", None)
-        if callable(stale_check):
+        failure_handler = getattr(data_fetcher, "handle_scheduled_failure", None)
+        if callable(failure_handler):
             try:
-                stale_check()
+                failure_handler(last_error_type)
             except Exception as exc:
-                logging.error("Cached stale-data check failed (%s).", type(exc).__name__)
+                logging.error("Scheduled failure handling failed (%s).", type(exc).__name__)
+        else:
+            stale_check = getattr(data_fetcher, "check_cached_stale_data", None)
+            if callable(stale_check):
+                try:
+                    stale_check()
+                except Exception as exc:
+                    logging.error("Cached stale-data check failed (%s).", type(exc).__name__)
     finally:
         touch_scheduler_heartbeat()
         run_captcha_maintenance(DATA_DIR)

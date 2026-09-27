@@ -14,7 +14,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from captcha_solver.tencent import TencentCaptchaHandler
 from scripts.const import BALANCE_URL, LOGIN_URL
 from scripts.pages import login_selectors as selectors
-from scripts.support.credentials import LoginCredential, mask_account
+from scripts.support.credentials import LoginCredential
 from scripts.support.error_watcher import ErrorWatcher
 from scripts.support.notifier import build_notifier
 from scripts.support.session_manager import SessionManager
@@ -223,7 +223,7 @@ class LoginManager:
             self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_CODE_TAB)
             input_elements = driver.find_elements(By.CLASS_NAME, selectors.DESKTOP_INPUT_CLASS)
             input_elements[2].send_keys(self._account)
-            logging.info("input_elements account : %s\r", mask_account(self._account))
+            logging.info("Filled login account input.")
             self._click_button(driver, By.XPATH, selectors.DESKTOP_PHONE_CODE_BUTTON)
             code = input("Input your phone verification code: ")
             input_elements[3].send_keys(code)
@@ -237,7 +237,7 @@ class LoginManager:
             self._set_login_method("password")
             input_elements = driver.find_elements(By.CLASS_NAME, selectors.DESKTOP_INPUT_CLASS)
             input_elements[0].send_keys(self._account)
-            logging.info("input_elements account : %s\r", mask_account(self._account))
+            logging.info("Filled login account input.")
             input_elements[1].send_keys(self._password)
             logging.info("input_elements password : ********\r")
 
@@ -355,7 +355,7 @@ class LoginManager:
                 raise RuntimeError("mobile password form inputs not found")
             input_elements[0].clear()
             input_elements[0].send_keys(self._account)
-            logging.info("input_elements account : %s\r", mask_account(self._account))
+            logging.info("Filled login account input.")
             input_elements[1].clear()
             input_elements[1].send_keys(self._password)
             logging.info("input_elements password : ********\r")

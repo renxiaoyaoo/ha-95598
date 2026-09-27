@@ -8,7 +8,7 @@ ENV TZ=Asia/Shanghai
 
 
 ARG TARGETARCH
-ARG VERSION
+ARG VERSION=dev
 ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG APT_SCHEME=https
 ARG APT_FALLBACK_MIRROR=deb.debian.org
@@ -62,17 +62,25 @@ RUN cd /tmp \
     --trusted-host "${PIP_TRUSTED_HOST}" \
     -r requirements.txt \
     && rm -rf /tmp/* \
+    && find /usr/local/lib/python3.12/site-packages -type d \( -name __pycache__ -o -name test -o -name tests \) -prune -exec rm -rf '{}' + \
+    && find /usr/local/lib/python3.12/site-packages -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete \
     && pip cache purge \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/log/*
 
 ENV LANG=C.UTF-8
 
-RUN mkdir -p /app/data
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid app --create-home app \
+    && mkdir -p /app/data \
+    && chown -R app:app /app
 
-COPY scripts /app/scripts
-COPY captcha_solver /app/captcha_solver
-COPY config /app/config
+COPY --chown=app:app scripts /app/scripts
+COPY --chown=app:app captcha_solver /app/captcha_solver
+COPY --chown=app:app config /app/config
+
+ENV BROWSER_DISABLE_SANDBOX=true
+USER app
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=120s --retries=2 \
     CMD python3 -m scripts.tools.healthcheck

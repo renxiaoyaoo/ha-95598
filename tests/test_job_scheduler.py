@@ -5,6 +5,7 @@ class FailingFetcher:
     def __init__(self) -> None:
         self.calls = 0
         self.stale_checks = 0
+        self.failure_types = []
 
     def fetch(self) -> None:
         self.calls += 1
@@ -12,6 +13,9 @@ class FailingFetcher:
 
     def check_cached_stale_data(self) -> None:
         self.stale_checks += 1
+
+    def handle_scheduled_failure(self, error_type: str) -> None:
+        self.failure_types.append(error_type)
 
 
 def test_run_task_retries_failed_fetch(monkeypatch) -> None:
@@ -22,7 +26,8 @@ def test_run_task_retries_failed_fetch(monkeypatch) -> None:
 
     assert job_scheduler.run_task(fetcher, 2) is False
     assert fetcher.calls == 2
-    assert fetcher.stale_checks == 1
+    assert fetcher.stale_checks == 0
+    assert fetcher.failure_types == ["ValueError"]
 
 
 def test_invalid_fetch_timeout_uses_safe_default(monkeypatch) -> None:

@@ -24,6 +24,7 @@ options:
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
+  mqtt_publish_timeout_seconds: 10
   job_start_time: "07:00"
   job_times: 2
   retry_times_limit: 3
@@ -38,6 +39,7 @@ options:
   tg_chat_id: ""
   tg_api_base_url: "https://api.telegram.org"
   stale_data_alert_days: 2
+  history_gap_alert_days: 30
   captcha_point_click_max_refreshes: 4
   login_fallback: "qrcode"
   qr_code_login_refresh_limit: 1
@@ -54,6 +56,7 @@ schema:
   mqtt_port: port
   mqtt_username: str?
   mqtt_password: password?
+  mqtt_publish_timeout_seconds: int(1,60)
   job_start_time: str
   job_times: int(1,10)
   retry_times_limit: int(1,10)
@@ -68,6 +71,7 @@ schema:
   tg_chat_id: str?
   tg_api_base_url: url?
   stale_data_alert_days: int(1,30)
+  history_gap_alert_days: int(2,365)
   captcha_point_click_max_refreshes: int(0,10)
   login_fallback: list(qrcode|none)
   qr_code_login_refresh_limit: int(0,5)

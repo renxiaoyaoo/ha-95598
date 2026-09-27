@@ -19,6 +19,7 @@ class MqttPublisher:
         client_id: str,
         qos: int = 1,
         retain: bool = True,
+        publish_timeout_seconds: float = 10.0,
     ) -> None:
         self.host = host
         self.port = port
@@ -27,6 +28,7 @@ class MqttPublisher:
         self.client_id = client_id
         self.qos = qos
         self.retain = retain
+        self.publish_timeout_seconds = max(float(publish_timeout_seconds), 0.1)
         self._client = None
         self._connected = False
 
@@ -96,7 +98,10 @@ class MqttPublisher:
         if not isinstance(payload, str):
             payload = json.dumps(payload, ensure_ascii=False)
         message = client.publish(topic, payload=payload, qos=self.qos, retain=retain)
-        message.wait_for_publish()
+        message.wait_for_publish(timeout=self.publish_timeout_seconds)
+        if not message.is_published():
+            self._connected = False
+            raise TimeoutError("MQTT publish timed out.")
         if message.rc != mqtt.MQTT_ERR_SUCCESS:
             self._connected = False
             raise RuntimeError(f"Message publish failed: {mqtt.error_string(message.rc)}")
