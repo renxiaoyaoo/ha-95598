@@ -32,6 +32,21 @@ class PageTracer:
     def _detail_trace_enabled() -> bool:
         return os.getenv("DEBUG_PAGE_TRACE_DETAIL", "false").lower() == "true"
 
+    @staticmethod
+    def _trace_mode() -> str:
+        mode = os.getenv("PAGE_TRACE_MODE", "errors").strip().lower()
+        return mode if mode in {"all", "errors", "off"} else "errors"
+
+    @classmethod
+    def _should_capture(cls, label: str) -> bool:
+        mode = cls._trace_mode()
+        if mode == "all":
+            return True
+        if mode == "off":
+            return False
+        lower_label = label.lower()
+        return any(marker in lower_label for marker in ("error", "fail", "unknown", "not_found"))
+
     def _prune_old_artifacts(self) -> None:
         retention_days = self._trace_retention_days()
         if retention_days <= 0:
@@ -67,8 +82,11 @@ class PageTracer:
             return
 
         step_label = self.resolve_label(label)
+        self.ensure_trace_dir()
+        if not self._should_capture(step_label):
+            return
         safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "_", step_label)[:80]
-        base_path = self.ensure_trace_dir() / safe_label
+        base_path = self.trace_dir / safe_label
         detailed_trace = self._detail_trace_enabled()
 
         try:

@@ -584,7 +584,7 @@ class TencentCaptchaHandler:
                     EC.presence_of_element_located((By.CSS_SELECTOR, ".tencent-captcha-dy__verify-confirm-btn"))
                 )
                 WebDriverWait(driver, 5).until(
-                    lambda _driver: "disabled" not in (confirm.get_attribute("class") or "")
+                    lambda _driver, element=confirm: "disabled" not in (element.get_attribute("class") or "")
                 )
                 driver.execute_script("arguments[0].click();", confirm)
                 self._step_sleep(driver, "after_tencent_point_click_submit")

@@ -74,6 +74,8 @@ export CAPTCHA_POINT_CLICK_MAX_REFRESHES="$(json_get captcha_point_click_max_ref
 export LOGIN_FALLBACK="$(json_get login_fallback qrcode)"
 export QR_CODE_LOGIN_REFRESH_LIMIT="$(json_get qr_code_login_refresh_limit 1)"
 export TRACE_RETENTION_DAYS="$(json_get trace_retention_days 7)"
+export PAGE_TRACE_MODE="$(json_get page_trace_mode errors)"
+export BROWSER_PROFILE_CACHE_MAX_MB="$(json_get browser_profile_cache_max_mb 128)"
 
 LOGIN_CREDENTIALS_JSON="$(json_dump login_credentials)"
 if [[ "${LOGIN_CREDENTIALS_JSON}" != "[]" ]]; then

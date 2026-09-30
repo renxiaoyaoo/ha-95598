@@ -44,6 +44,8 @@ options:
   login_fallback: "qrcode"
   qr_code_login_refresh_limit: 1
   trace_retention_days: 7
+  page_trace_mode: "errors"
+  browser_profile_cache_max_mb: 128
 schema:
   account: str
   password: password
@@ -76,3 +78,5 @@ schema:
   login_fallback: list(qrcode|none)
   qr_code_login_refresh_limit: int(0,5)
   trace_retention_days: int(1,30)
+  page_trace_mode: list(errors|all|off)
+  browser_profile_cache_max_mb: int(0,1024)

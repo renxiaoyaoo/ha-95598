@@ -31,3 +31,25 @@ def test_user_state_cache_ignores_invalid_entries(tmp_path):
     cache = UserStateCache(store)
 
     assert list(cache.iter_snapshots()) == []
+
+
+def test_user_state_cache_preserves_fetch_metadata(tmp_path):
+    store = CacheStore(tmp_path / "cache.json")
+    store.save(
+        {
+            "user1": {
+                "data": {
+                    "fetch_status": "ok",
+                    "last_fetch_success_at": "2026-08-06T12:00:00",
+                },
+                "progress": {"stage": "complete"},
+            }
+        }
+    )
+
+    UserStateCache(store).save_snapshot("user1", UserStateSnapshot(balance=10.0))
+
+    saved = store.load()["user1"]["data"]
+    assert saved["fetch_status"] == "ok"
+    assert saved["last_fetch_success_at"] == "2026-08-06T12:00:00"
+    assert saved["balance"] == 10.0

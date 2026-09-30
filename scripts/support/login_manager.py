@@ -150,7 +150,7 @@ class LoginManager:
         total_credentials = len(self._credentials)
         self._password_login_blocked_this_run = False
         for attempt in range(total_credentials):
-            credential = self._activate_credential(
+            self._activate_credential(
                 self._credential_index if attempt == 0 else self._credential_index + 1
             )
             logging.info(

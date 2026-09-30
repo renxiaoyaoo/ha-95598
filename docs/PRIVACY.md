@@ -49,4 +49,4 @@ python3 scripts/tools/config_doctor.py --all
 
 Logs should not print full account IDs, phone numbers, passwords, tokens, session cookies, QR image contents, database contents, or `.env` values.
 
-Runtime diagnostics under `data/pages/` can still contain private screenshots and page state. Full page HTML error traces are disabled by default; only enable `DEBUG_ERROR_TRACE_DETAIL=true` for short local debugging sessions.
+Runtime diagnostics under `data/pages/` can still contain private screenshots and page state. `PAGE_TRACE_MODE=errors` avoids routine page captures; full page HTML error traces are disabled by default. Only enable detailed tracing for short local debugging sessions.

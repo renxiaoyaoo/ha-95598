@@ -18,7 +18,9 @@ class UserStateCache:
         if not entry:
             entry = {"data": {}, "progress": {"stage": "none"}}
             data[user_id] = entry
-        entry["data"] = snapshot.to_cache_data()
+        current_data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+        current_data.update(snapshot.to_cache_data())
+        entry["data"] = current_data
         self.cache_store.save(data)
 
     def iter_snapshots(self):

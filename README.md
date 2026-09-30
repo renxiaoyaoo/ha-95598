@@ -160,6 +160,8 @@ docker compose logs -f ha-95598
 | `HA_RECORDER_DB_PATH` | Home Assistant recorder 数据库路径 |
 | `HA_ENERGY_BACKFILL_BACKUP_KEEP` | recorder 自动备份保留份数，默认 `2` |
 | `CAPTCHA_POINT_CLICK_MAX_REFRESHES` | 点选验证码低置信刷新次数 |
+| `BROWSER_PROFILE_CACHE_MAX_MB` | Chromium profile 缓存上限，默认 `128` MB |
+| `PAGE_TRACE_MODE` | 页面追踪模式，默认仅保存错误现场 |
 
 > [!IMPORTANT]
 > 日电费会按电价配置估算。仓库默认电价只是示例，不一定适合你的地区。私人电价建议放在被 `.gitignore` 忽略的 `config/tou_price_config.local.json`，并通过 `TOU_PRICE_CONFIG` 指向它。

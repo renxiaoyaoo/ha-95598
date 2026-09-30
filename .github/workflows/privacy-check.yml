@@ -32,6 +32,9 @@ jobs:
       - name: Run syntax check
         run: python3 scripts/tools/syntax_check.py
 
+      - name: Run static checks
+        run: python3 -m ruff check scripts captcha_solver tests --select E9,F,B
+
       - name: Audit dependencies
         run: python3 -m pip_audit -r requirements.txt --progress-spinner off
 

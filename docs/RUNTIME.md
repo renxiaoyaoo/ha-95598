@@ -38,6 +38,8 @@ Runtime state is stored in `data/`:
 | `pages/` | Error snapshots and debug traces |
 | `captcha_samples/` | Local captcha learning samples |
 
+Chromium keeps cookies and device state in its profile, while disposable cache files are capped by `BROWSER_PROFILE_CACHE_MAX_MB` (default `128`). Normal page screenshots are not stored unless `PAGE_TRACE_MODE=all`; the default `errors` mode records failure context only.
+
 These files can contain private data. They are ignored by git and should not be shared.
 
 ## Failure Recovery

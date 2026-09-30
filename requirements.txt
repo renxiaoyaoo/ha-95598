@@ -1,10 +1,10 @@
 requests==2.33.0
-urllib3==2.7.0
+urllib3==2.8.0
 selenium==4.49.0
 schedule==1.2.1
 Pillow==12.3.0
 numpy==1.26.2
 python-dotenv==1.2.2
 paho-mqtt==2.1.0
-ddddocr==1.6.1
+opencv-python-headless==4.11.0.86
 # python-dateutil

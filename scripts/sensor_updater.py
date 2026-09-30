@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from scripts.support.cache_store import CacheStore
@@ -19,33 +19,19 @@ from scripts.support.user_state import UserStateSnapshot
 from scripts.support.user_state_cache import UserStateCache
 from scripts.const import (
     BALANCE_SENSOR_NAME,
-    BALANCE_UNIT,
     DAILY_CHARGE_SENSOR_NAME,
     DAILY_HISTORY_SENSOR_NAME,
     DAILY_HISTORY_PUBLISH_DAYS,
     DAILY_USAGE_SENSOR_NAME,
     FETCH_STATUS_SENSOR_NAME,
-    FLAT_USAGE_SENSOR_NAME,
     MONTH_CHARGE_SENSOR_NAME,
     MONTHLY_HISTORY_SENSOR_NAME,
     MONTHLY_HISTORY_PUBLISH_MONTHS,
-    MONTH_FLAT_USAGE_SENSOR_NAME,
-    MONTH_PEAK_USAGE_SENSOR_NAME,
-    MONTH_TIP_USAGE_SENSOR_NAME,
     MONTH_USAGE_SENSOR_NAME,
-    MONTH_VALLEY_USAGE_SENSOR_NAME,
-    PEAK_USAGE_SENSOR_NAME,
-    TIP_USAGE_SENSOR_NAME,
     TOTAL_CHARGE_SENSOR_NAME,
     TOTAL_USAGE_SENSOR_NAME,
-    USAGE_UNIT,
-    VALLEY_USAGE_SENSOR_NAME,
     YEARLY_CHARGE_SENSOR_NAME,
-    YEARLY_FLAT_USAGE_SENSOR_NAME,
-    YEARLY_PEAK_USAGE_SENSOR_NAME,
-    YEARLY_TIP_USAGE_SENSOR_NAME,
     YEARLY_USAGE_SENSOR_NAME,
-    YEARLY_VALLEY_USAGE_SENSOR_NAME,
     SENSOR_FRIENDLY_LABELS,
 )
 
@@ -195,6 +181,7 @@ class SensorUpdater:
         tip_usage: float = None,
         notify_stale: bool = True,
         log_success: bool = True,
+        publish_fetch_status: bool = True,
     ):
         self._save_to_cache(
             user_id,
@@ -237,14 +224,15 @@ class SensorUpdater:
         if self.publish_tou_detail_sensors:
             self.update_tou_data(user_id, postfix, last_daily_date, valley_usage, flat_usage, peak_usage, tip_usage)
             self.update_period_tou_data(user_id, postfix)
-        self.update_fetch_status(
-            user_id,
-            postfix,
-            "ok",
-            latest_daily_date=last_daily_date,
-            last_success_at=datetime.now().isoformat(timespec="seconds"),
-            stage="complete",
-        )
+        if publish_fetch_status:
+            self.update_fetch_status(
+                user_id,
+                postfix,
+                "ok",
+                latest_daily_date=last_daily_date,
+                last_success_at=datetime.now().isoformat(timespec="seconds"),
+                stage="complete",
+            )
 
         if log_success:
             logging.info("User %s state-refresh task run successfully!", mask_user_id(user_id))
@@ -322,9 +310,32 @@ class SensorUpdater:
     def republish(self):
         try:
             republished = False
+            cache_entries = self.cache_store.load()
             for user_id, snapshot in self.user_state_cache.iter_snapshots():
                 clean_values = snapshot.to_update_kwargs()
-                self.update_one_userid(user_id, notify_stale=False, log_success=False, **clean_values)
+                self.update_one_userid(
+                    user_id,
+                    notify_stale=False,
+                    log_success=False,
+                    publish_fetch_status=False,
+                    **clean_values,
+                )
+                entry = cache_entries.get(user_id, {})
+                user_data = entry.get("data", {}) if isinstance(entry, dict) else {}
+                progress = entry.get("progress", {}) if isinstance(entry, dict) else {}
+                cached_status = user_data.get("fetch_status")
+                if cached_status:
+                    self.update_fetch_status(
+                        user_id,
+                        f"_{user_id[-4:]}",
+                        cached_status,
+                        latest_daily_date=user_data.get("last_daily_date"),
+                        last_success_at=user_data.get("last_fetch_success_at"),
+                        last_attempt_at=user_data.get("last_fetch_attempt_at"),
+                        stage=progress.get("stage"),
+                        error_type=user_data.get("last_fetch_error_type"),
+                        persist=False,
+                    )
                 logging.info("Cached data republished for user %s.", mask_user_id(user_id))
                 republished = True
             return republished
@@ -697,6 +708,7 @@ class SensorUpdater:
         last_attempt_at: str | None = None,
         stage: str | None = None,
         error_type: str | None = None,
+        persist: bool = True,
     ):
         sensor_name = FETCH_STATUS_SENSOR_NAME + postfix
         now = datetime.now()
@@ -707,7 +719,8 @@ class SensorUpdater:
             except Exception:
                 source_delay_days = None
 
-        last_attempt_at = last_attempt_at or now.isoformat(timespec="seconds")
+        if persist and last_attempt_at is None:
+            last_attempt_at = now.isoformat(timespec="seconds")
         attributes = {
             "latest_daily_date": latest_daily_date,
             "source_delay_days": source_delay_days,
@@ -716,14 +729,15 @@ class SensorUpdater:
             "stage": stage,
             "error_type": error_type,
         }
-        self.save_partial_data(
-            user_id,
-            fetch_status=status,
-            source_delay_days=source_delay_days,
-            last_fetch_success_at=last_success_at,
-            last_fetch_attempt_at=last_attempt_at,
-            last_fetch_error_type=error_type,
-        )
+        if persist:
+            self.save_partial_data(
+                user_id,
+                fetch_status=status,
+                source_delay_days=source_delay_days,
+                last_fetch_success_at=last_success_at,
+                last_fetch_attempt_at=last_attempt_at,
+                last_fetch_error_type=error_type,
+            )
         self._publish_sensor_state(
             sensor_name,
             user_id,

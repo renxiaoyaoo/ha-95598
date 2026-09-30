@@ -1,4 +1,5 @@
 from scripts.sensor_updater import SensorUpdater
+from scripts.support.user_state import UserStateSnapshot
 
 
 def test_public_sensor_name_removes_account_suffix():
@@ -91,3 +92,60 @@ def test_mark_cached_fetches_failed_updates_each_non_ignored_user(monkeypatch):
     assert statuses[0][1]["error_type"] == "TimeoutError"
     assert statuses[0][1]["stage"] == "daily"
     assert stale_checks == ["test-user-0000"]
+
+
+def test_republish_preserves_cached_fetch_status_timestamps(monkeypatch):
+    updater = SensorUpdater()
+    cached_entry = {
+        "data": {
+            "fetch_status": "ok",
+            "last_daily_date": "2026-01-01",
+            "last_fetch_success_at": "2026-01-02T03:04:05",
+            "last_fetch_attempt_at": "2026-01-02T03:00:00",
+            "last_fetch_error_type": None,
+        },
+        "progress": {"stage": "complete"},
+    }
+    monkeypatch.setattr(updater.cache_store, "load", lambda: {"test-user-0000": cached_entry})
+    monkeypatch.setattr(
+        updater.user_state_cache,
+        "iter_snapshots",
+        lambda: iter([("test-user-0000", UserStateSnapshot(last_daily_date="2026-01-01"))]),
+    )
+    user_updates = []
+    status_updates = []
+    monkeypatch.setattr(updater, "update_one_userid", lambda *args, **kwargs: user_updates.append((args, kwargs)))
+    monkeypatch.setattr(updater, "update_fetch_status", lambda *args, **kwargs: status_updates.append((args, kwargs)))
+
+    assert updater.republish() is True
+
+    assert user_updates[0][1]["publish_fetch_status"] is False
+    assert status_updates[0][0][2] == "ok"
+    assert status_updates[0][1]["last_success_at"] == "2026-01-02T03:04:05"
+    assert status_updates[0][1]["last_attempt_at"] == "2026-01-02T03:00:00"
+    assert status_updates[0][1]["persist"] is False
+
+
+def test_fetch_status_can_be_republished_without_mutating_cache(monkeypatch):
+    updater = SensorUpdater()
+    published = []
+    monkeypatch.setattr(
+        updater,
+        "save_partial_data",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("cache mutated")),
+    )
+    monkeypatch.setattr(updater, "_publish_sensor_state", lambda *args, **kwargs: published.append((args, kwargs)))
+
+    updater.update_fetch_status(
+        "test-user-0000",
+        "_0000",
+        "ok",
+        latest_daily_date="2026-01-01",
+        last_success_at="2026-01-02T03:04:05",
+        last_attempt_at="2026-01-02T03:00:00",
+        stage="complete",
+        persist=False,
+    )
+
+    assert published[0][0][2] == "ok"
+    assert published[0][1]["extra_attributes"]["last_success_at"] == "2026-01-02T03:04:05"

@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -6,6 +7,16 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+PROFILE_CACHE_DIRS = (
+    Path("Default/Cache"),
+    Path("Default/Code Cache"),
+    Path("Default/GPUCache"),
+    Path("Default/Service Worker/CacheStorage"),
+    Path("component_crx_cache"),
+    Path("GrShaderCache"),
+    Path("GraphiteDawnCache"),
+    Path("ShaderCache"),
+)
 
 DESKTOP_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -20,6 +31,60 @@ IPHONE_UA = (
 
 def _truthy_env(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _profile_cache_limit_bytes() -> int:
+    try:
+        limit_mb = max(float(os.getenv("BROWSER_PROFILE_CACHE_MAX_MB", "128")), 0)
+    except ValueError:
+        logging.warning("Invalid BROWSER_PROFILE_CACHE_MAX_MB; using 128 MB.")
+        limit_mb = 128
+    return int(limit_mb * 1024 * 1024)
+
+
+def prune_profile_cache(profile_dir: Path, limit_bytes: int | None = None) -> tuple[int, int]:
+    limit_bytes = _profile_cache_limit_bytes() if limit_bytes is None else max(int(limit_bytes), 0)
+    if limit_bytes == 0:
+        return 0, 0
+
+    files = []
+    total_bytes = 0
+    for relative_dir in PROFILE_CACHE_DIRS:
+        cache_dir = profile_dir / relative_dir
+        if not cache_dir.exists():
+            continue
+        for path in cache_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            files.append((stat.st_mtime_ns, path, stat.st_size))
+            total_bytes += stat.st_size
+
+    if total_bytes <= limit_bytes:
+        return 0, 0
+
+    removed_files = 0
+    removed_bytes = 0
+    for _mtime, path, size in sorted(files, key=lambda item: (item[0], str(item[1]))):
+        if total_bytes - removed_bytes <= limit_bytes:
+            break
+        try:
+            path.unlink()
+        except OSError:
+            continue
+        removed_files += 1
+        removed_bytes += size
+
+    if removed_files:
+        logging.info(
+            "Pruned Chromium profile cache: files=%s reclaimed_mb=%.1f.",
+            removed_files,
+            removed_bytes / 1024 / 1024,
+        )
+    return removed_files, removed_bytes
 
 
 def _profile_defaults(profile: str) -> dict:
@@ -52,7 +117,9 @@ def _add_persistent_profile_options(chrome_options, profile: str) -> None:
     if not _truthy_env("BROWSER_PERSIST_PROFILE", "true"):
         return
     profile_dir = os.getenv("BROWSER_PROFILE_DIR") or str(ROOT_DIR / "data" / "chrome-profile" / profile)
-    Path(profile_dir).mkdir(parents=True, exist_ok=True)
+    profile_path = Path(profile_dir)
+    profile_path.mkdir(parents=True, exist_ok=True)
+    prune_profile_cache(profile_path)
     chrome_options.add_argument(f"--user-data-dir={profile_dir}")
     chrome_options.add_argument("--profile-directory=Default")
 
@@ -103,6 +170,9 @@ def create_chromium_driver(driver_wait_time: int):
     if os.geteuid() == 0 or _truthy_env("BROWSER_DISABLE_SANDBOX"):
         chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    cache_limit_bytes = _profile_cache_limit_bytes()
+    if cache_limit_bytes:
+        chrome_options.add_argument(f"--disk-cache-size={cache_limit_bytes}")
     chrome_options.add_argument(f"--window-size={browser_window_size}")
     chrome_options.add_argument(f"--lang={browser_language_primary}")
     chrome_options.add_argument("--disable-features=Translate")

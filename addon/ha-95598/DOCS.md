@@ -30,6 +30,8 @@
 - `notifier`：可选 `telegram`，用于推送登录二维码、数据停更和历史缺口告警。
 - `stale_data_alert_days`：最新日数据落后多少天后告警。
 - `history_gap_alert_days`：检查最近多少天内的日历史缺口。
+- `page_trace_mode`：页面追踪模式，默认只保存错误现场。
+- `browser_profile_cache_max_mb`：Chromium profile 缓存上限，默认 `128` MB。
 
 ## 重要说明
 
