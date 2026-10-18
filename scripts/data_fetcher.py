@@ -299,6 +299,10 @@ class DataFetcher:
                     self._step_sleep(driver, f"after_update_user_state_{mask_user_id(user_id)}")
                 except Exception as e:
                     failed_user_count += 1
+                    try:
+                        self._log_page_state(driver, f"user_fetch_failed_{mask_user_id(user_id)}")
+                    except Exception as trace_exc:
+                        logging.warning("Failed to capture user fetch trace (%s).", type(trace_exc).__name__)
                     cached = updater.get_cached_user_data(user_id)
                     updater.update_fetch_status(
                         user_id,

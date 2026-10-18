@@ -177,6 +177,7 @@ def test_upsert_calculated_monthly_from_daily_keeps_official_monthly_bill(tmp_pa
         assert monthly["total_usage"] == 576.0
         assert monthly["total_charge"] == 298.04
         assert monthly["source"] == SqliteDB.MONTHLY_SOURCE_OFFICIAL
+        assert db.get_recent_monthly_history()[-1]["source"] == SqliteDB.MONTHLY_SOURCE_OFFICIAL
     finally:
         os.environ.pop("DB_NAME", None)
 
@@ -358,5 +359,6 @@ def test_recent_monthly_history_default_keeps_12_months(tmp_path) -> None:
         assert history[0]["month"] == "2025-03"
         assert history[-1]["month"] == "2026-02"
         assert history[-1]["charge"] == 11.5
+        assert history[-1]["source"] == SqliteDB.MONTHLY_SOURCE_CALCULATED
     finally:
         os.environ.pop("DB_NAME", None)

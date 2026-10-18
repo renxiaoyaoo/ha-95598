@@ -49,7 +49,8 @@ def test_fetch_raises_when_a_user_fetch_fails(monkeypatch) -> None:
     fetcher._resolve_user_id_list = lambda _driver, _updater: ["test_user_0000"]
     fetcher._is_progress_current = lambda _progress: False
     fetcher._has_completed_stage = lambda _progress, _stage: False
-    fetcher._log_page_state = lambda *_args: None
+    page_traces = []
+    fetcher._log_page_state = lambda _driver, label: page_traces.append(label)
     fetcher._get_all_data = lambda *_args: (_ for _ in ()).throw(ValueError("private"))
     monkeypatch.setattr(
         data_fetcher_module.ErrorWatcher,
@@ -61,6 +62,7 @@ def test_fetch_raises_when_a_user_fetch_fails(monkeypatch) -> None:
         fetcher.fetch()
 
     assert updater.statuses == ["running", "failed"]
+    assert page_traces[-1] == "user_fetch_failed_***0000"
     assert updater.closed is True
     assert driver.quit_called is True
 

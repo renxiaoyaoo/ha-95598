@@ -614,7 +614,7 @@ class SqliteDB:
         try:
             cursor.execute(
                 """
-                SELECT month, total_usage, COALESCE(total_charge, 0), valley_usage, flat_usage, peak_usage, tip_usage
+                SELECT month, total_usage, COALESCE(total_charge, 0), valley_usage, flat_usage, peak_usage, tip_usage, source
                 FROM monthly_usage
                 WHERE user_id = ?
                 ORDER BY month DESC
@@ -633,6 +633,7 @@ class SqliteDB:
                     "flat_usage": self._safe_float(row[4], default=0.0),
                     "peak_usage": self._safe_float(row[5], default=0.0),
                     "tip_usage": self._safe_float(row[6], default=0.0),
+                    "source": row[7] or self.MONTHLY_SOURCE_CALCULATED,
                 }
                 for row in rows
             ]

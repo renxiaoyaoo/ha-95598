@@ -44,8 +44,8 @@ def test_daily_history_payload_keeps_state_and_series_attributes():
 
 def test_monthly_history_payload_keeps_latest_state_and_series_attributes():
     series = [
-        {"month": "2026-07", "usage": 576.0, "charge": 298.04},
-        {"month": "2026-08", "usage": 77.75, "charge": 33.1},
+        {"month": "2026-07", "usage": 576.0, "charge": 298.04, "source": "official"},
+        {"month": "2026-08", "usage": 77.75, "charge": 33.1, "source": "calculated"},
     ]
 
     payload = HistoryPayloadBuilder.monthly_history(series)

@@ -54,7 +54,7 @@ History sensors include attributes:
 }
 ```
 
-`daily_electricity_history` publishes recent daily rows. `monthly_electricity_history` publishes recent monthly rows. These attributes can be large, so excluding them from Home Assistant recorder is recommended.
+`daily_electricity_history` publishes recent daily rows. `monthly_electricity_history` publishes recent monthly rows and includes `source` (`official` or `calculated`) for each month. These attributes can be large, so excluding them from Home Assistant recorder is recommended.
 
 ## Billing Rule
 
