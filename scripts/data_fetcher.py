@@ -245,9 +245,7 @@ class DataFetcher:
                     )
 
                     if should_open_balance_page:
-                        driver.get(BALANCE_URL)
-                        self._log_page_state(driver, "after_open_balance_url")
-                        self._step_sleep(driver, "after_open_balance_url")
+                        self.navigator.open_authenticated_url(driver, BALANCE_URL, "after_open_balance_url")
                         if len(user_id_list) > 1:
                             current_userid = self.navigator.ensure_target_userid(
                                 driver, userid_index, expected_user_id=user_id

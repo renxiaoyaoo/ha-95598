@@ -59,7 +59,11 @@ class MonthlyBillFetcher:
                 verified = True
 
                 existing_year = self.db.get_period_row("yearly_usage", "year", str(target_year))
-                needs_deep_sync = not self._row_has_nonzero_tou(existing_year)
+                current_month_key = f"{current_year:04d}-{current_month:02d}"
+                needs_deep_sync = not self._row_has_nonzero_tou(existing_year) or self._has_calculated_closed_months(
+                    target_year,
+                    current_month_key,
+                )
 
                 visible_months = self.get_visible_month_keys(driver)
                 pending_months = [month_key for month_key in visible_months if self._needs_sync(month_key)]
@@ -222,6 +226,14 @@ class MonthlyBillFetcher:
 
     def _needs_sync(self, month_key: str) -> bool:
         return not self.db.is_official_monthly_bill(month_key)
+
+    def _has_calculated_closed_months(self, target_year: int, current_month_key: str) -> bool:
+        return any(
+            row.get("source") == self.db.MONTHLY_SOURCE_CALCULATED
+            and str(row.get("month", "")).startswith(f"{target_year:04d}-")
+            and str(row.get("month", "")) < current_month_key
+            for row in self.db.get_recent_monthly_history(months=24)
+        )
 
     def _row_has_nonzero_tou(self, row) -> bool:
         if not row:

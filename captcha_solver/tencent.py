@@ -588,7 +588,14 @@ class TencentCaptchaHandler:
                 )
                 driver.execute_script("arguments[0].click();", confirm)
                 self._step_sleep(driver, "after_tencent_point_click_submit")
-                success = self._confirm_login_success(driver) or not self.has_captcha(driver)
+                try:
+                    success = bool(
+                        WebDriverWait(driver, 15).until(
+                            lambda current_driver: self._confirm_login_success(current_driver)
+                        )
+                    )
+                except Exception:
+                    success = False
                 if success:
                     self._save_point_click_report(f"success_{attempt}")
                     self._record_learning_sample("success", answer_image, bg_image, f"success_{attempt}")

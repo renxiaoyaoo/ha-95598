@@ -191,6 +191,9 @@ class SqliteDB:
             peak_usage = self._safe_float(data.get("peak_usage"), default=0.0)
             tip_usage = self._safe_float(data.get("tip_usage"), default=0.0)
             source = self._normalize_monthly_source(data.get("source"))
+            if source == self.MONTHLY_SOURCE_CALCULATED and self.is_official_monthly_bill(month):
+                logging.info("Skip calculated monthly update for %s because an official bill exists.", month)
+                return True
             self.connect.execute(
                 f"""
                 INSERT INTO {self.MONTHLY_TABLE} (

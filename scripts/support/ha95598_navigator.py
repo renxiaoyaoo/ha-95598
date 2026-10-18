@@ -32,6 +32,22 @@ class Ha95598Navigator:
     def click_button(self, driver, button_search_type, button_search_key) -> None:
         self._click_button(driver, button_search_type, button_search_key)
 
+    def open_authenticated_url(self, driver, url: str, label: str) -> None:
+        driver.get(url)
+        self._log_page_state(driver, label)
+        self._step_sleep(driver, label)
+        if not self.has_session_expired_modal(driver):
+            return
+
+        logging.info("Detected expired session while opening an authenticated page; relogin once.")
+        self.relogin_after_session_expired(driver)
+        driver.get(url)
+        retry_label = f"{label}_after_relogin"
+        self._log_page_state(driver, retry_label)
+        self._step_sleep(driver, retry_label)
+        if self.has_session_expired_modal(driver):
+            raise RuntimeError("session expired again after relogin")
+
     def get_user_ids(self, driver) -> list[str]:
         try:
             self.open_my_page(driver)

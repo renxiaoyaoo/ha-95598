@@ -169,6 +169,18 @@ def test_upsert_calculated_monthly_from_daily_keeps_official_monthly_bill(tmp_pa
                 "tip_usage": 0,
             }
         )
+        assert db.insert_monthly_data(
+            {
+                "month": "2026-07",
+                "total_usage": 20,
+                "total_charge": 8.5,
+                "valley_usage": 5,
+                "flat_usage": 8,
+                "peak_usage": 7,
+                "tip_usage": 0,
+                "source": SqliteDB.MONTHLY_SOURCE_CALCULATED,
+            }
+        )
 
         assert db.upsert_calculated_monthly_from_daily("2026-07") is True
         monthly = db.get_period_row("monthly_usage", "month", "2026-07")
