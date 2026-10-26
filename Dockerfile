@@ -13,8 +13,7 @@ ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG APT_SCHEME=https
 ARG APT_FALLBACK_MIRROR=deb.debian.org
 ARG APT_FALLBACK_SCHEME=https
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+ARG PIP_INDEX_URL=https://pypi.org/simple
 ENV VERSION=${VERSION}
 ENV PYTHON_IN_DOCKER='PYTHON_IN_DOCKER'
 
@@ -52,14 +51,12 @@ RUN set -eux; \
 COPY requirements.txt /tmp/requirements.txt
 
 RUN cd /tmp \
-    && python3 -m pip install --upgrade pip \
     && PIP_ROOT_USER_ACTION=ignore pip install \
     --disable-pip-version-check \
     --no-cache-dir \
     --retries 10 \
     --timeout 120 \
     --index-url "${PIP_INDEX_URL}" \
-    --trusted-host "${PIP_TRUSTED_HOST}" \
     -r requirements.txt \
     && rm -rf /tmp/* \
     && find /usr/local/lib/python3.12/site-packages -type d \( -name __pycache__ -o -name test -o -name tests \) -prune -exec rm -rf '{}' + \
