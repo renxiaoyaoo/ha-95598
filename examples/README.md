@@ -8,7 +8,7 @@
 
 ### 里面有什么
 
-- [`chart.yaml`](energy-dashboard/chart.yaml)：近 `180` 天每日电费的 `apexcharts-card` 配置。
+- [`chart.yaml`](energy-dashboard/chart.yaml)：近一年每日电费的 `apexcharts-card` 配置。
 - [`daily-chart.png`](energy-dashboard/daily-chart.png)：图表效果图。
 - [`energy-panel.png`](energy-dashboard/energy-panel.png)：Home Assistant 能源面板配置参考。
 - [`entities.png`](energy-dashboard/entities.png)：实体名称和展示效果参考。

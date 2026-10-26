@@ -1,7 +1,7 @@
 type: custom:apexcharts-card
 header:
   show: true
-  title: 近180天每日电费
+  title: 近一年每日电费
   show_states: false
 apex_config:
   chart:
@@ -55,6 +55,6 @@ grid_options:
   rows: auto
 now:
   show: false
-graph_span: 180d
+graph_span: 365d
 span:
   end: day
