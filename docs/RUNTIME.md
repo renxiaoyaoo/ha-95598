@@ -15,13 +15,15 @@ On startup the service:
 
 Each run handles every visible 95598 user ID unless it is listed in `IGNORE_USER_ID`.
 
+Set `JOB_SCHEDULE_TIMES` to comma-separated local times such as `07:00,18:00` when fixed daily runs are preferred. Otherwise `JOB_START_TIME` and `JOB_TIMES` distribute runs evenly across 24 hours. Each configured time receives the existing random offset of up to 10 minutes.
+
 For each user, progress is saved in cache with these stages:
 
 ```text
 none -> balance -> yearly -> monthly -> daily -> tou -> persist -> billing -> complete
 ```
 
-If a run is interrupted and restarted on the same day, completed stages can be skipped and cached data can be reused.
+Each scheduled run starts a fresh set of stages. Retries within that run keep completed stages so an interrupted attempt can resume without repeating successful work.
 
 Each fetch attempt is limited by `FETCH_ATTEMPT_TIMEOUT_MINUTES` (default `30`). A timed-out attempt follows the normal retry path. Docker Compose also checks a scheduler heartbeat and marks the container unhealthy if the main loop remains blocked for too long.
 

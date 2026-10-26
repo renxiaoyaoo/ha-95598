@@ -169,6 +169,14 @@ class DataFetcher:
 
         return user_ids
 
+    def prepare_scheduled_run(self) -> None:
+        if self.updater is None:
+            return
+        user_ids = self._known_user_ids_from_local_state(self.updater)
+        for user_id in user_ids:
+            self.updater.update_progress_stage(user_id, "none", fetch_date=self._progress_date())
+        logging.info("Prepared a fresh scheduled fetch for %s cached user(s).", len(user_ids))
+
     def _step_sleep(self, driver, label: Optional[str] = None, multiplier: int = 1) -> None:
         step_label = self._resolve_trace_label(label)
         seconds = self.RETRY_WAIT_TIME_OFFSET_UNIT * multiplier

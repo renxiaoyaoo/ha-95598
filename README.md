@@ -144,7 +144,8 @@ docker compose logs -f ha-95598
 | `IGNORE_USER_ID` | 可选忽略指定户号 |
 | `MQTT_HOST` / `MQTT_PORT` | MQTT Broker；留空则不发布 HA 实体 |
 | `MQTT_PUBLISH_TIMEOUT_SECONDS` | 单条 MQTT 发布最长等待秒数，默认 `10` |
-| `JOB_START_TIME` / `JOB_TIMES` | 每天同步时间和次数 |
+| `JOB_SCHEDULE_TIMES` | 可选明确同步时间，例如 `07:00,18:00` |
+| `JOB_START_TIME` / `JOB_TIMES` | 未设置明确时间时使用的起始时间和均匀分布次数 |
 | `FETCH_ATTEMPT_TIMEOUT_MINUTES` | 单次抓取超时分钟数，默认 `30` |
 | `DAILY_USAGE_WINDOW_DAYS` | 每次同步最近 `7` 或 `30` 天 |
 | `HISTORY_GAP_ALERT_DAYS` | 检查最近多少天的日历史缺口，默认 `30` |

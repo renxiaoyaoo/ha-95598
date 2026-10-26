@@ -89,3 +89,19 @@ def test_fetch_raises_when_login_returns_no_user_ids(monkeypatch) -> None:
 
     assert updater.closed is True
     assert driver.quit_called is True
+
+
+def test_prepare_scheduled_run_resets_cached_progress() -> None:
+    calls = []
+    updater = SimpleNamespace(
+        update_progress_stage=lambda user_id, stage, fetch_date: calls.append(
+            (user_id, stage, fetch_date)
+        )
+    )
+    fetcher = DataFetcher.__new__(DataFetcher)
+    fetcher.updater = updater
+    fetcher._known_user_ids_from_local_state = lambda _updater: ["test_user_0000"]
+    fetcher._progress_date = lambda: "2026-10-26"
+    fetcher.prepare_scheduled_run()
+
+    assert calls == [("test_user_0000", "none", "2026-10-26")]

@@ -68,12 +68,26 @@ def fetch_attempt_timeout(timeout_seconds: int):
         signal.signal(signal.SIGALRM, previous_handler)
 
 
-def schedule_jobs(fetcher, updater, job_start_time: str, job_times: int, retry_times_limit: int, republish_interval_minutes: int) -> None:
-    base_time = datetime.strptime(job_start_time, "%H:%M")
+def _resolve_job_times(job_start_time: str, job_times: int, explicit_times: tuple[str, ...]) -> list[datetime]:
+    if explicit_times:
+        return [datetime.strptime(value, "%H:%M") for value in explicit_times]
 
-    for index in range(job_times):
+    base_time = datetime.strptime(job_start_time, "%H:%M")
+    return [base_time + timedelta(hours=(24 / job_times) * index) for index in range(job_times)]
+
+
+def schedule_jobs(
+    fetcher,
+    updater,
+    job_start_time: str,
+    job_times: int,
+    retry_times_limit: int,
+    republish_interval_minutes: int,
+    explicit_times: tuple[str, ...] = (),
+) -> None:
+    for base_time in _resolve_job_times(job_start_time, job_times, explicit_times):
         random_delay_minutes = random.randint(-10, 10)
-        final_time = base_time + timedelta(hours=(24 / job_times) * index) + timedelta(minutes=random_delay_minutes)
+        final_time = base_time + timedelta(minutes=random_delay_minutes)
         run_time_str = final_time.strftime("%H:%M")
         logging.info("Scheduled job will run at %s every day", run_time_str)
         schedule.every().day.at(run_time_str).do(run_task, fetcher, retry_times_limit)
@@ -91,6 +105,9 @@ def run_task(data_fetcher, retry_times_limit: int):
     last_error_type = "UnknownError"
     timeout_seconds = _fetch_attempt_timeout_seconds()
     try:
+        prepare_run = getattr(data_fetcher, "prepare_scheduled_run", None)
+        if callable(prepare_run):
+            prepare_run()
         for retry_times in range(1, retry_times_limit + 1):
             touch_scheduler_heartbeat()
             try:

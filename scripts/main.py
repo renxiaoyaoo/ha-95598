@@ -20,6 +20,7 @@ class RuntimeConfig:
     credentials: list[LoginCredential]
     job_start_time: str
     job_times: int
+    job_schedule_times: tuple[str, ...]
     log_level: str
     version: str | None
     retry_times_limit: int
@@ -32,6 +33,11 @@ def load_runtime_config() -> RuntimeConfig:
         credentials=load_login_credentials(),
         job_start_time=os.getenv("JOB_START_TIME", "07:00"),
         job_times=int(os.getenv("JOB_TIMES", 2)),
+        job_schedule_times=tuple(
+            value.strip()
+            for value in os.getenv("JOB_SCHEDULE_TIMES", "").split(",")
+            if value.strip()
+        ),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         version=os.getenv("VERSION"),
         retry_times_limit=int(os.getenv("RETRY_TIMES_LIMIT", 5)),
@@ -66,7 +72,15 @@ def main():
     logging.info("ErrorWatcher init done")
     updater = SensorUpdater()
     fetcher = DataFetcher(config.credentials[0].account, config.credentials[0].password, updater=updater, credentials=config.credentials)
-    schedule_jobs(fetcher, updater, config.job_start_time, config.job_times, config.retry_times_limit, config.republish_interval_minutes)
+    schedule_jobs(
+        fetcher,
+        updater,
+        config.job_start_time,
+        config.job_times,
+        config.retry_times_limit,
+        config.republish_interval_minutes,
+        config.job_schedule_times,
+    )
 
     republished = updater.republish()
     if not config.fetch_on_startup:
