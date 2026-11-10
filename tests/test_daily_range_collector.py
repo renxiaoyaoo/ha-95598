@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from scripts.fetchers.daily_range import DailyRangeFetchService
 from scripts.fetchers.vue_daily_range import VueDailyRangeCollector
 from scripts.support.db import SqliteDB
@@ -104,3 +106,126 @@ def test_range_backfill_recalculates_later_daily_charges(tmp_path):
     finally:
         db.close_connect()
         os.environ.pop("DB_NAME", None)
+
+
+def test_automatic_backfill_fills_internal_gap(tmp_path, monkeypatch):
+    class FlatResolver:
+        def calculate_daily_charge(
+            self, _date, valley_usage, flat_usage, peak_usage, tip_usage, _month_usage_before
+        ):
+            return valley_usage + flat_usage + peak_usage + tip_usage
+
+    class FakeCollector:
+        def collect(self, _driver, start_date, end_date):
+            assert (start_date, end_date) == ("2026-09-02", "2026-09-02")
+            return [
+                {
+                    "date": "2026-09-02",
+                    "total_usage": 4.0,
+                    "valley_usage": 1.0,
+                    "flat_usage": 1.0,
+                    "peak_usage": 2.0,
+                    "tip_usage": 0.0,
+                }
+            ]
+
+    monkeypatch.setenv("DB_NAME", str(tmp_path / "automatic_backfill.db"))
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user")
+        for date_text in ("2026-09-01", "2026-09-03"):
+            assert db.insert_daily_data(
+                {
+                    "date": date_text,
+                    "total_usage": 4.0,
+                    "total_charge": 4.0,
+                    "valley_usage": 1.0,
+                    "flat_usage": 1.0,
+                    "peak_usage": 2.0,
+                    "tip_usage": 0.0,
+                }
+            )
+        db.close_connect()
+
+        service = DailyRangeFetchService.__new__(DailyRangeFetchService)
+        service.db = db
+        service.collector = FakeCollector()
+        service.tou_price_resolver = FlatResolver()
+
+        assert service.backfill_missing(object(), "test_user") == 1
+        assert db.connect_user_db("test_user")
+        assert db.get_missing_daily_dates(30) == []
+    finally:
+        db.close_connect()
+
+
+def test_automatic_backfill_fails_when_gap_remains(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_NAME", str(tmp_path / "incomplete_backfill.db"))
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user")
+        for date_text in ("2026-09-01", "2026-09-03"):
+            assert db.insert_daily_data(
+                {
+                    "date": date_text,
+                    "total_usage": 1.0,
+                    "total_charge": 1.0,
+                    "valley_usage": 1.0,
+                }
+            )
+        db.close_connect()
+
+        service = DailyRangeFetchService.__new__(DailyRangeFetchService)
+        service.db = db
+        service.collector = type("EmptyCollector", (), {"collect": lambda *_args: []})()
+        service.tou_price_resolver = object()
+
+        with pytest.raises(RuntimeError, match="left 1 gap"):
+            service.backfill_missing(object(), "test_user")
+    finally:
+        db.close_connect()
+
+
+def test_automatic_backfill_splits_non_contiguous_gaps(tmp_path, monkeypatch):
+    class FakeCollector:
+        calls = []
+
+        def collect(self, _driver, start_date, end_date):
+            self.calls.append((start_date, end_date))
+            return []
+
+    monkeypatch.setenv("DB_NAME", str(tmp_path / "split_backfill.db"))
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user")
+        for date_text in ("2026-09-01", "2026-09-03", "2026-09-05"):
+            assert db.insert_daily_data({"date": date_text, "total_usage": 1.0, "total_charge": 1.0})
+        db.close_connect()
+
+        service = DailyRangeFetchService.__new__(DailyRangeFetchService)
+        service.db = db
+        service.collector = FakeCollector()
+        service.tou_price_resolver = object()
+
+        with pytest.raises(RuntimeError, match="left 2 gap"):
+            service.backfill_missing(object(), "test_user")
+        assert service.collector.calls == [
+            ("2026-09-02", "2026-09-02"),
+            ("2026-09-04", "2026-09-04"),
+        ]
+    finally:
+        db.close_connect()
+
+
+def test_missing_daily_dates_can_scan_all_stored_history(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_NAME", str(tmp_path / "all_history_gaps.db"))
+    db = SqliteDB()
+    try:
+        assert db.connect_user_db("test_user")
+        for date_text in ("2026-07-01", "2026-07-03", "2026-09-01"):
+            assert db.insert_daily_data({"date": date_text, "total_usage": 1.0, "total_charge": 1.0})
+
+        assert "2026-07-02" not in db.get_missing_daily_dates(30)
+        assert "2026-07-02" in db.get_missing_daily_dates(days=None)
+    finally:
+        db.close_connect()

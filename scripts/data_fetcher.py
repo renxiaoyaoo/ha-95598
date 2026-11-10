@@ -368,6 +368,31 @@ class DataFetcher:
     def _get_all_data(self, driver, user_id, userid_index, updater: SensorUpdater):
         return self.fetch_workflow.run(driver, user_id, userid_index, updater)
 
+    def _backfill_missing_daily_history(self, driver, user_id: str, updater: SensorUpdater) -> int:
+        from scripts.fetchers.daily_range import DailyRangeFetchService
+
+        service = DailyRangeFetchService(
+            driver_factory=self.create_webdriver,
+            login_manager=self.login_manager,
+            navigator=self.navigator,
+            step_sleep=self.step_sleep,
+            log_page_state=self.log_page_state,
+            db=self.db,
+            tou_price_resolver=self.tou_price_resolver,
+            updater=updater,
+            ignore_user_ids=self.IGNORE_USER_ID,
+        )
+        return service.backfill_missing(driver, user_id)
+
+    def _get_stored_daily_charge(self, user_id: str, date_text: str | None):
+        if self.db is None or not date_text or not self.db.connect_user_db(user_id):
+            return None
+        try:
+            row = self.db.get_period_row("daily_usage", "date", date_text)
+            return row.get("total_charge") if row else None
+        finally:
+            self.db.close_connect()
+
     def _get_electric_balance(self, driver):
         return self.balance_fetcher.get_balance(driver)
 

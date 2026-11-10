@@ -537,7 +537,7 @@ class SqliteDB:
         finally:
             cursor.close()
 
-    def get_missing_daily_dates(self, days: int = 30) -> list[str]:
+    def get_missing_daily_dates(self, days: int | None = 30) -> list[str]:
         if self.connect is None or self.user_id is None:
             logging.error("Database connection is not established.")
             return []
@@ -555,7 +555,11 @@ class SqliteDB:
 
             earliest = datetime.strptime(earliest_text, "%Y-%m-%d").date()
             latest = datetime.strptime(latest_text, "%Y-%m-%d").date()
-            start = max(earliest, latest - timedelta(days=max(days, 2) - 1))
+            start = (
+                earliest
+                if days is None
+                else max(earliest, latest - timedelta(days=max(days, 2) - 1))
+            )
             cursor.execute(
                 f"""
                 SELECT date

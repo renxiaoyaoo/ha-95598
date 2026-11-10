@@ -166,6 +166,10 @@ class FetchWorkflow:
                     daily_tou_map=daily_tou_map,
                 ),
             )
+            if fetcher._backfill_missing_daily_history(driver, user_id, updater):
+                stored_charge = fetcher._get_stored_daily_charge(user_id, last_daily_date)
+                if stored_charge is not None:
+                    last_daily_charge = stored_charge
             updater.save_partial_data(user_id, last_daily_charge=last_daily_charge)
             updater.update_progress_stage(user_id, "persist", fetch_date=fetcher._progress_date())
             progress = updater.get_progress(user_id)

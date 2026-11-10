@@ -1,4 +1,5 @@
 import logging
+from datetime import date, timedelta
 from typing import Optional
 
 from scripts.fetchers.vue_daily_range import VueDailyRangeCollector
@@ -114,6 +115,50 @@ class DailyRangeFetchService:
             return results
         finally:
             driver.quit()
+
+    def _missing_daily_dates(self, user_id: str) -> list[str]:
+        if self.db is None or not self.db.connect_user_db(user_id):
+            return []
+        try:
+            return self.db.get_missing_daily_dates(days=None)
+        finally:
+            self.db.close_connect()
+
+    @staticmethod
+    def _contiguous_ranges(missing_dates: list[str]) -> list[tuple[str, str]]:
+        if not missing_dates:
+            return []
+        ranges = []
+        start = previous = date.fromisoformat(missing_dates[0])
+        for date_text in missing_dates[1:]:
+            current = date.fromisoformat(date_text)
+            if current != previous + timedelta(days=1):
+                ranges.append((start.isoformat(), previous.isoformat()))
+                start = current
+            previous = current
+        ranges.append((start.isoformat(), previous.isoformat()))
+        return ranges
+
+    def backfill_missing(self, driver, user_id: str) -> int:
+        """Fill internal gaps after a normal fetch while the usage page is open."""
+        missing_dates = self._missing_daily_dates(user_id)
+        if not missing_dates:
+            return 0
+
+        logging.info(
+            "Automatically backfilling %s missing daily row(s) in %s range(s).",
+            len(missing_dates),
+            len(self._contiguous_ranges(missing_dates)),
+        )
+        persisted_count = 0
+        for start_date, end_date in self._contiguous_ranges(missing_dates):
+            rows = self.collector.collect(driver, start_date, end_date)
+            persisted_count += self._persist_rows(user_id, rows)
+        remaining = self._missing_daily_dates(user_id)
+        if remaining:
+            raise RuntimeError(f"automatic daily history backfill left {len(remaining)} gap(s)")
+        logging.info("Automatic daily history backfill completed: persisted=%s.", persisted_count)
+        return persisted_count
 
     def _persist_rows(self, user_id: str, rows: list[dict]) -> int:
         if self.db is None:

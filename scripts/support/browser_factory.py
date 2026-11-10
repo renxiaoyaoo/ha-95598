@@ -1,5 +1,6 @@
 import logging
 import os
+import socket
 from pathlib import Path
 
 from selenium import webdriver
@@ -27,6 +28,7 @@ IPHONE_UA = (
     "AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/137.0.7151.107 "
     "Mobile/15E148 Safari/604.1"
 )
+_persistent_profile_available = True
 
 
 def _truthy_env(name: str, default: str = "false") -> bool:
@@ -87,6 +89,37 @@ def prune_profile_cache(profile_dir: Path, limit_bytes: int | None = None) -> tu
     return removed_files, removed_bytes
 
 
+def profile_lock_is_active(profile_dir: Path) -> bool:
+    lock_path = profile_dir / "SingletonLock"
+    if lock_path.is_symlink():
+        try:
+            lock_owner = os.readlink(lock_path)
+            owner_host, owner_pid = lock_owner.rsplit("-", 1)
+            return owner_host == socket.gethostname() and Path(f"/proc/{int(owner_pid)}").exists()
+        except (OSError, ValueError):
+            return False
+    return False
+
+
+def remove_stale_profile_locks(profile_dir: Path) -> int:
+    if profile_lock_is_active(profile_dir):
+        return 0
+
+    removed = 0
+    for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        path = profile_dir / name
+        if not path.exists() and not path.is_symlink():
+            continue
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logging.info("Removed %s stale Chromium profile lock file(s).", removed)
+    return removed
+
+
 def _profile_defaults(profile: str) -> dict:
     if profile == "iphone":
         return {
@@ -119,6 +152,7 @@ def _add_persistent_profile_options(chrome_options, profile: str) -> None:
     profile_dir = os.getenv("BROWSER_PROFILE_DIR") or str(ROOT_DIR / "data" / "chrome-profile" / profile)
     profile_path = Path(profile_dir)
     profile_path.mkdir(parents=True, exist_ok=True)
+    remove_stale_profile_locks(profile_path)
     prune_profile_cache(profile_path)
     chrome_options.add_argument(f"--user-data-dir={profile_dir}")
     chrome_options.add_argument("--profile-directory=Default")
@@ -153,7 +187,9 @@ def _apply_stealth_overrides(driver, *, language: str, platform: str, touch_poin
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": script})
 
 
-def create_chromium_driver(driver_wait_time: int):
+def create_chromium_driver(driver_wait_time: int, *, _force_ephemeral: bool = False):
+    global _persistent_profile_available
+
     browser_profile = os.getenv("BROWSER_PROFILE", "desktop").strip().lower() or "desktop"
     defaults = _profile_defaults(browser_profile)
     browser_window_size = os.getenv("BROWSER_WINDOW_SIZE", defaults["window_size"])
@@ -184,13 +220,30 @@ def create_chromium_driver(driver_wait_time: int):
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument(f"user-agent={browser_ua}")
-    _add_persistent_profile_options(chrome_options, browser_profile)
+    use_persistent_profile = (
+        not _force_ephemeral
+        and _persistent_profile_available
+        and _truthy_env("BROWSER_PERSIST_PROFILE", "true")
+    )
+    if use_persistent_profile:
+        _add_persistent_profile_options(chrome_options, browser_profile)
 
     prefs = {
         "intl.accept_languages": browser_language,
         "credentials_enable_service": False,
         "profile.password_manager_enabled": False,
     }
+    if use_persistent_profile:
+        # Debian Chromium otherwise opens its network-backed default new-tab
+        # page, which blocks the first CDP command when that page is unreachable.
+        prefs.update(
+            {
+                "homepage": "about:blank",
+                "homepage_is_newtabpage": False,
+                "session.restore_on_startup": 4,
+                "session.startup_urls": ["data:,"],
+            }
+        )
     chrome_options.add_experimental_option("prefs", prefs)
 
     if defaults["mobile"]:
@@ -219,18 +272,39 @@ def create_chromium_driver(driver_wait_time: int):
     else:
         service = ChromeService()
 
-    driver = webdriver.Chrome(
-        options=chrome_options,
-        service=service,
-    )
-    driver.set_page_load_timeout(int(os.getenv("BROWSER_PAGE_LOAD_TIMEOUT", "60")))
-    _apply_stealth_overrides(
-        driver,
-        language=browser_language,
-        platform=browser_platform,
-        touch_points=browser_touch_points,
-        hardware_concurrency=browser_hardware_concurrency,
-        device_memory=browser_device_memory,
-    )
-    driver.implicitly_wait(driver_wait_time)
-    return driver
+    driver = None
+    try:
+        driver = webdriver.Chrome(
+            options=chrome_options,
+            service=service,
+        )
+        page_load_timeout = int(os.getenv("BROWSER_PAGE_LOAD_TIMEOUT", "60"))
+        driver.set_page_load_timeout(min(page_load_timeout, 20))
+        _apply_stealth_overrides(
+            driver,
+            language=browser_language,
+            platform=browser_platform,
+            touch_points=browser_touch_points,
+            hardware_concurrency=browser_hardware_concurrency,
+            device_memory=browser_device_memory,
+        )
+        driver.set_page_load_timeout(page_load_timeout)
+        driver.implicitly_wait(driver_wait_time)
+        return driver
+    except Exception:
+        # Failed handshakes and CDP setup can otherwise leave Chromium alive
+        # and lock the profile for every later retry.
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception as cleanup_exc:
+                logging.warning("Failed to quit Chromium after startup failure (%s).", type(cleanup_exc).__name__)
+        try:
+            service.stop()
+        except Exception as cleanup_exc:
+            logging.warning("Failed to stop ChromeDriver after startup failure (%s).", type(cleanup_exc).__name__)
+        if use_persistent_profile:
+            _persistent_profile_available = False
+            logging.warning("Persistent Chromium profile failed; retrying once with an ephemeral profile.")
+            return create_chromium_driver(driver_wait_time, _force_ephemeral=True)
+        raise
