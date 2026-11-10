@@ -21,16 +21,18 @@ class HistoryPayloadBuilder:
     def daily_history(history: dict[str, Any] | None) -> dict[str, Any] | None:
         if history is None:
             return None
+        series = history["series"]
         return HaSensorPayload(
             state=history["state"],
             attributes={
                 "latest_date": history["latest_date"],
-                "series_days": history["series_days"],
-                "series": history["series"],
+                "dates": [item["date"] for item in series],
+                "usage": [item["usage"] for item in series],
+                "charge": [item["charge"] for item in series],
             },
             log={
                 "latest_date": history["latest_date"],
-                "series_days": history["series_days"],
+                "series_days": len(series),
             },
         ).to_dict()
 

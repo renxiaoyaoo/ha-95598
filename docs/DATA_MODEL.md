@@ -43,18 +43,19 @@ MQTT state topics publish compact JSON objects:
 {"state": 12.34}
 ```
 
-History sensors include attributes:
+The daily history sensor uses parallel arrays to keep one year of data below common MQTT payload limits:
 
 ```json
 {
   "state": 12.34,
-  "series": [
-    {"date": "2026-01-01", "usage": 10.0, "charge": 5.2}
-  ]
+  "latest_date": "2026-01-01",
+  "dates": ["2026-01-01"],
+  "usage": [10.0],
+  "charge": [5.2]
 }
 ```
 
-`daily_electricity_history` publishes recent daily rows. `monthly_electricity_history` publishes recent monthly rows and includes `source` (`official` or `calculated`) for each month. These attributes can be large, so excluding them from Home Assistant recorder is recommended.
+Values at the same array index belong to the same day. `monthly_electricity_history` keeps its object-based `series` and includes `source` (`official` or `calculated`) for each month. Excluding both history entities from Home Assistant recorder is recommended.
 
 ## Billing Rule
 

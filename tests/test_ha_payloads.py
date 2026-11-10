@@ -1,3 +1,6 @@
+import json
+from datetime import date, timedelta
+
 from scripts.support.ha_payloads import HaSensorPayload, HistoryPayloadBuilder
 
 
@@ -15,7 +18,7 @@ def test_ha_sensor_payload_converts_to_legacy_dict_shape():
     }
 
 
-def test_daily_history_payload_keeps_state_and_series_attributes():
+def test_daily_history_payload_uses_parallel_arrays():
     history = {
         "state": 12.18,
         "latest_date": "2026-08-06",
@@ -32,14 +35,37 @@ def test_daily_history_payload_keeps_state_and_series_attributes():
         "state": 12.18,
         "attributes": {
             "latest_date": "2026-08-06",
-            "series_days": 2,
-            "series": history["series"],
+            "dates": ["2026-08-05", "2026-08-06"],
+            "usage": [11.81, 12.18],
+            "charge": [4.87, 5.03],
         },
         "log": {
             "latest_date": "2026-08-06",
             "series_days": 2,
         },
     }
+
+
+def test_daily_history_payload_stays_below_16_kib_for_one_year():
+    series = [
+        {
+            "date": (date(2026, 1, 1) + timedelta(days=index)).isoformat(),
+            "usage": 9999.99,
+            "charge": 9999.99,
+        }
+        for index in range(365)
+    ]
+    history = {
+        "state": series[-1]["usage"],
+        "latest_date": series[-1]["date"],
+        "series_days": len(series),
+        "series": series,
+    }
+
+    payload = HistoryPayloadBuilder.daily_history(history)
+    state_payload = {"state": payload["state"], **payload["attributes"]}
+
+    assert len(json.dumps(state_payload, ensure_ascii=False).encode("utf-8")) < 16 * 1024
 
 
 def test_monthly_history_payload_keeps_latest_state_and_series_attributes():
